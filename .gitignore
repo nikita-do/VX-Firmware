@@ -51,4 +51,6 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-hardware/bms_controller/bms_controller-backups
+# Kicad
+hardware/VitalX-ESP/VitalX-ESP-backups
+*.lck

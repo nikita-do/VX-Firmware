@@ -1,0 +1,5 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "AD8232ACPZ")(type "KiCad")(uri "X:/hardware/customLib/AD8232ACPZ-R7/AD8232ACPZ.kicad_sym")(options "")(descr ""))
+  (lib (name "ADP160AUJZ-1-8-R7")(type "KiCad")(uri "X:/hardware/customLib/ADP160AUJZ-1-8-R7/ADP160AUJZ-1-8-R7.kicad_sym")(options "")(descr ""))
+)
