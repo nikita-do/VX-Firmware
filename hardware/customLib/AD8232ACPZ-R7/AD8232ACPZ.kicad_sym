@@ -103,7 +103,7 @@
         (name "OPAMP-" (effects (font (size 1.27 1.27))))
         (number "9" (effects (font (size 1.27 1.27))))
       )
-      (pin unspecified line (at 36.83 -40.64 180) (length 5.08)
+      (pin passive line (at 36.83 -40.64 180) (length 5.08)
         (name "EPAD" (effects (font (size 1.27 1.27))))
         (number "HTAB" (effects (font (size 1.27 1.27))))
       )
