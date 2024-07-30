@@ -259,7 +259,7 @@
   (pad "19" smd roundrect (at 1.952399 -0.499999 90) (size 0.2746 0.8048) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.25) (tstamp 183dce51-4fad-4c20-9f90-ea6955dc56a8))
   (pad "20" smd roundrect (at 1.952399 -1.000001 90) (size 0.2746 0.8048) (layers "F.Cu" "F.Paste" "F.Mask") (roundrect_rratio 0.25) (tstamp 47a99bd3-5110-47a2-b6a0-a6b38d2036a2))
   (pad "HTAB" smd rect (at 0 0) (size 2.65 2.65) (layers "F.Cu" "F.Paste" "F.Mask") (tstamp 0d623a45-b435-4d2b-b9db-da6a27f319d3))
-  (model "X:/hardware/customLib/AD8232ACPZ-R7/AD8232ACPZ-R7.STEP"
+  (model "${KIPRJMOD}/../customLib/AD8232ACPZ-R7/AD8232ACPZ-R7.STEP"
     (offset (xyz 0 0 0))
     (scale (xyz 1 1 1))
     (rotate (xyz -90 0 90))

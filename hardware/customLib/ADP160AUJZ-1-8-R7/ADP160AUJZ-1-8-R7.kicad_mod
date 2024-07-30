@@ -83,7 +83,7 @@
   (pad "3" smd rect (at -1.27635 0.950001) (size 0.9525 0.508) (layers "F.Cu" "F.Paste" "F.Mask") (tstamp 817f0907-1f68-422f-b8cd-e262246585bd))
   (pad "4" smd rect (at 1.27635 0.950001) (size 0.9525 0.508) (layers "F.Cu" "F.Paste" "F.Mask") (tstamp c948a4da-ccb7-41b0-91f7-bed8e3a1266a))
   (pad "5" smd rect (at 1.27635 -0.950001) (size 0.9525 0.508) (layers "F.Cu" "F.Paste" "F.Mask") (tstamp 6e33f152-58c2-4fff-bc2a-005ed8e29987))
-  (model "X:/hardware/customLib/ADP160AUJZ-1-8-R7/ADP160AUJZ-1-8-R7.step"
+  (model "$(KIPRJMOD)/../customLib/ADP160AUJZ-1-8-R7/ADP160AUJZ-1-8-R7.step"
     (offset (xyz 0 0 0))
     (scale (xyz 1 1 1))
     (rotate (xyz 0 0 0))
