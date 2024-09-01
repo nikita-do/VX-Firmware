@@ -2833,7 +2833,7 @@
     (property "Value" "ECG Probe" (at 37.465 192.405 0)
       (effects (font (size 1.27 1.27)))
     )
-    (property "Footprint" "Connector_Audio:Jack_3.5mm_PJ320D_Horizontal" (at 40.005 198.755 0)
+    (property "Footprint" "AUDIO_SJ2-3593D-SMT-TR:SJ2-3593D-SMT-TR" (at 40.005 198.755 0)
       (effects (font (size 1.27 1.27)) hide)
     )
     (property "Datasheet" "~" (at 40.005 198.755 0)
@@ -2987,7 +2987,7 @@
     )
   )
 
-  (symbol (lib_id "Device:R") (at 88.265 216.535 90) (unit 1)
+  (symbol (lib_id "Device:R") (at 88.265 216.535 270) (mirror x) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
     (uuid 2ef733d2-a606-41b4-a378-c693d30dd36f)
     (property "Reference" "R1" (at 88.265 212.09 90)
