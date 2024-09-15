@@ -34,9 +34,9 @@
         "other_text_thickness": 0.15,
         "other_text_upright": false,
         "pads": {
-          "drill": 0.762,
-          "height": 1.524,
-          "width": 1.524
+          "drill": 0.0,
+          "height": 0.95,
+          "width": 0.8
         },
         "silk_line_width": 0.15,
         "silk_text_italic": false,
@@ -122,10 +122,10 @@
         "min_silk_clearance": 0.0,
         "min_text_height": 0.7999999999999999,
         "min_text_thickness": 0.08,
-        "min_through_hole_diameter": 0.3,
+        "min_through_hole_diameter": 0.254,
         "min_track_width": 0.0,
         "min_via_annular_width": 0.09999999999999999,
-        "min_via_diameter": 0.5,
+        "min_via_diameter": 0.0,
         "solder_mask_clearance": 0.0,
         "solder_mask_min_width": 0.0,
         "solder_mask_to_copper_clearance": 0.0,
@@ -173,8 +173,10 @@
       ],
       "track_widths": [
         0.0,
-        0.3,
-        0.5
+        0.254,
+        0.381,
+        0.508,
+        1.0668
       ],
       "via_dimensions": [
         {
@@ -182,8 +184,12 @@
           "drill": 0.0
         },
         {
-          "diameter": 0.7,
-          "drill": 0.3
+          "diameter": 0.508,
+          "drill": 0.254
+        },
+        {
+          "diameter": 0.762,
+          "drill": 0.381
         }
       ],
       "zones_allow_external_fillets": false
@@ -203,11 +209,7 @@
     "equivalence_files": []
   },
   "erc": {
-    "erc_exclusions": [
-      "power_pin_not_driven|1327150|2241550|cc205124-99d6-452b-a922-601999931077|00000000-0000-0000-0000-000000000000|||",
-      "power_pin_not_driven|3168650|1276350|c9779b85-9ab9-4dfd-8300-4cf82c86b4e8|00000000-0000-0000-0000-000000000000|||",
-      "power_pin_not_driven|3168650|1377950|33bd89f3-82e6-4379-ba10-d0798cc5d73b|00000000-0000-0000-0000-000000000000|||"
-    ],
+    "erc_exclusions": [],
     "meta": {
       "version": 0
     },
@@ -464,7 +466,7 @@
       "svg": "",
       "vrml": ""
     },
-    "page_layout_descr_file": ""
+    "page_layout_descr_file": "/home/evol/Documents/DPEE/VitalX/hardware/customLib/dpee_sche_template.kicad_wks"
   },
   "schematic": {
     "annotate_start_num": 0,
