@@ -466,7 +466,7 @@
       "svg": "",
       "vrml": ""
     },
-    "page_layout_descr_file": "X:/hardware/customLib/dpee_sche_template.kicad_wks"
+    "page_layout_descr_file": "$(KIPRJMOD)/../customLib/dpee_sche_template.kicad_wks"
   },
   "schematic": {
     "annotate_start_num": 0,
