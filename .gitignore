@@ -54,6 +54,7 @@ dkms.conf
 # Kicad
 hardware/VitalX-ESP/VitalX-ESP-backups
 *.lck
+fabrication/
 
 # For PCBs designed using KiCad: https://www.kicad.org/
 # Format documentation: https://kicad.org/help/file-formats/
