@@ -24,6 +24,13 @@
       "track_widths": [],
       "via_dimensions": []
     },
+    "ipc2581": {
+      "dist": "",
+      "distpn": "",
+      "internal_id": "",
+      "mfg": "",
+      "mpn": ""
+    },
     "layer_presets": [],
     "viewports": []
   },
@@ -282,8 +289,11 @@
       "gencad": "",
       "idf": "",
       "netlist": "",
+      "plot": "",
+      "pos_files": "",
       "specctra_dsn": "",
       "step": "",
+      "svg": "",
       "vrml": ""
     },
     "page_layout_descr_file": ""
@@ -312,7 +322,7 @@
       "version": 1
     },
     "net_format_name": "",
-    "page_layout_descr_file": "X:\\hardware\\customLib\\dpee_sche_template.kicad_wks",
+    "page_layout_descr_file": "$(KIPRJMOD)/../customLib/dpee_sche_template.kicad_wks",
     "plot_directory": "",
     "spice_current_sheet_as_root": false,
     "spice_external_command": "spice \"%I\"",
