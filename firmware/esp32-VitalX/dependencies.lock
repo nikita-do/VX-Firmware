@@ -1,0 +1,16 @@
+dependencies:
+  espressif/qrcode:
+    dependencies: []
+    source:
+      path: C:\Users\SE\Documents\GitHub\VitalX\firmware\esp32-VitalX\components\espressif__qrcode
+      type: local
+    version: 0.1.0~2
+  idf:
+    source:
+      type: idf
+    version: 5.4.0
+direct_dependencies:
+- espressif/qrcode
+manifest_hash: 31e84f87b31b00f3cedf7d22d0b74bad6171c400ec9cf1c9f42a27e3206a3765
+target: esp32s2
+version: 2.0.0
