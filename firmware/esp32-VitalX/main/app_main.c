@@ -193,7 +193,7 @@ void timer_read_sensors(void *arg)
         char *message = cJSON_PrintUnformatted(json);
 
         // Publish the data with QoS 1
-        esp_mqtt_client_publish(client, MQTT_TOPIC("data") , message, 0, 1, 0);
+        esp_mqtt_client_publish(client, MQTT_TOPIC("data") , message, 0, 0, 0);
 
         // Free the JSON string
         free(message);
