@@ -1,5 +1,7 @@
 /**
  * Contain shared structures, macros between source files
+ * 
+ * TODO: Create a header file for each source file
  */
 
 #ifndef APP_MAIN_H

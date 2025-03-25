@@ -1,12 +1,12 @@
-/* MQTT (over TCP) Example
-
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
-
+/**
+ * @file app_main.c
+ * @brief Main application file
+ * 
+ * The application reads the GSR, ECG, PPG IR, and PPG Red values from the sensors and publishes them to the MQTT broker. The application also subscribes to the MQTT broker for the commands to start and stop the data publishing.
+ * 
+ * @version 1.0.0
+ * @date 2025-03-20
+ */
 #include "app_main.h"
 
 #include "adpd144.h"
@@ -85,16 +85,6 @@ esp_err_t timer_init(void)
 /**************************************************************************************************
  *                                     MQTT Callback functions
  **************************************************************************************************/
-/*
- * @brief Event handler registered to receive MQTT events
- *
- *  This function is called by the MQTT client event loop.
- *
- * @param handler_args user data registered to the event.
- * @param base Event base for the handler(always MQTT Base in this example).
- * @param event_id The id for the received event.
- * @param event_data The data for the event, esp_mqtt_event_handle_t.
- */
 /* MQTT Event Handler */
 void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
@@ -181,7 +171,7 @@ void timer_read_sensors(void *arg)
         ESP_ERROR_CHECK(adpd144_readRedValue(&ppg_red_value, 1));
 
         // Print data for serial visualizing 
-        printf("gsr:%u,ecg:%u,ir:%ld,red:%ld\n", gsr.voltage_value, ecg.voltage_value, ppg_ir_value, ppg_red_value);
+        // printf("gsr:%u,ecg:%u,ir:%ld,red:%ld\n", gsr.voltage_value, ecg.voltage_value, ppg_ir_value, ppg_red_value);
 
         cJSON_ReplaceItemInObject(json, "time", cJSON_CreateString(get_timestamp()));
         cJSON_ReplaceItemInObject(json, "gsr", cJSON_CreateNumber(gsr.voltage_value));
