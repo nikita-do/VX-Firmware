@@ -21,6 +21,8 @@
 
 #include <wifi_provisioning/manager.h>
 
+#ifdef CONFIG_EXAMPLE_WIFI_PROV_MODE
+
 #ifdef CONFIG_EXAMPLE_PROV_TRANSPORT_BLE
 #include <wifi_provisioning/scheme_ble.h>
 #endif /* CONFIG_EXAMPLE_PROV_TRANSPORT_BLE */
@@ -546,3 +548,5 @@ void wifi_provisioning(void)
 #endif
 
 }
+
+#endif

@@ -34,10 +34,30 @@ menu "SNTP Configuration"
 
 endmenu
 
-menu "WiFi Provisioning Configuration"
+menu "WiFi Configuration"
+
+    choice EXAMPLE_WIFI_CONFIGURATION_MODE
+        bool "WiFi Configuration Mode"
+        default EXAMPLE_WIFI_PROV_MODE
+        help
+            Wi-Fi configuration mode for the example.
+
+        config EXAMPLE_WIFI_STAT_MODE
+            bool "Station mode"
+            help
+                Wi-Fi station mode. Connect to an existing AP.
+
+        config EXAMPLE_WIFI_PROV_MODE
+            bool "Provisioning mode"
+            help
+                Wi-Fi provisioning mode.
+                The device will act as a SoftAP and allow the user to connect to it and provision it with new credentials.
+
+    endchoice
 
     choice EXAMPLE_PROV_TRANSPORT
         bool "Provisioning Transport"
+        depends on EXAMPLE_WIFI_PROV_MODE
         default EXAMPLE_PROV_TRANSPORT_SOFTAP if IDF_TARGET_ESP32S2
         default EXAMPLE_PROV_TRANSPORT_BLE
         help
@@ -54,6 +74,7 @@ menu "WiFi Provisioning Configuration"
 
     choice EXAMPLE_PROV_SECURITY_VERSION
         bool "Protocomm security version"
+        depends on EXAMPLE_WIFI_PROV_MODE
         default EXAMPLE_PROV_SECURITY_VERSION_2
         help
             Wi-Fi provisioning component offers 3 security versions.
@@ -91,11 +112,13 @@ menu "WiFi Provisioning Configuration"
 
     config EXAMPLE_PROV_TRANSPORT
         int
+        depends on EXAMPLE_WIFI_PROV_MODE
         default 1 if EXAMPLE_PROV_TRANSPORT_BLE
         default 2 if EXAMPLE_PROV_TRANSPORT_SOFTAP
 
     config EXAMPLE_PROV_ENABLE_APP_CALLBACK
         bool "Enable provisioning manager app callback"
+        depends on EXAMPLE_WIFI_PROV_MODE
         default n
         help
             This is for advanced use-cases like modifying Wi-Fi configuration parameters. This
@@ -103,6 +126,7 @@ menu "WiFi Provisioning Configuration"
 
     config EXAMPLE_RESET_PROVISIONED
         bool
+        depends on EXAMPLE_WIFI_PROV_MODE
         default n
         prompt "Reset provisioned status of the device"
         help
@@ -111,6 +135,7 @@ menu "WiFi Provisioning Configuration"
 
     config EXAMPLE_RESET_PROV_MGR_ON_FAILURE
         bool
+        depends on EXAMPLE_WIFI_PROV_MODE
         default y
         prompt "Reset provisioned credentials and state machine after session failure"
         help
@@ -119,6 +144,7 @@ menu "WiFi Provisioning Configuration"
 
     config EXAMPLE_PROV_MGR_MAX_RETRY_CNT
         int
+        depends on EXAMPLE_WIFI_PROV_MODE
         default 5
         prompt "Max retries before resetting provisioning state machine"
         depends on EXAMPLE_RESET_PROV_MGR_ON_FAILURE
@@ -129,12 +155,14 @@ menu "WiFi Provisioning Configuration"
 
     config EXAMPLE_PROV_SHOW_QR
         bool "Show provisioning QR code"
+        depends on EXAMPLE_WIFI_PROV_MODE
         default y
         help
             Show the QR code for provisioning.
 
     config EXAMPLE_PROV_USING_BLUEDROID
         bool
+        depends on EXAMPLE_WIFI_PROV_MODE
         depends on (BT_BLUEDROID_ENABLED && (IDF_TARGET_ESP32C3 || IDF_TARGET_ESP32S3))
         select BT_BLE_42_FEATURES_SUPPORTED
         default y
@@ -143,8 +171,78 @@ menu "WiFi Provisioning Configuration"
 
     config EXAMPLE_REPROVISIONING
         bool "Re-provisioning"
+        depends on EXAMPLE_WIFI_PROV_MODE
         help
             Enable re-provisioning - allow the device to provision for new credentials
             after previous successful provisioning.
+
+    config ESP_WIFI_SSID
+        string "WiFi SSID"
+        depends on EXAMPLE_WIFI_STAT_MODE
+        default "myssid"
+        help
+            SSID (network name) for the example to connect to.
+
+    config ESP_WIFI_PASSWORD
+        string "WiFi Password"
+        depends on EXAMPLE_WIFI_STAT_MODE
+        default "mypassword"
+        help
+            WiFi password (WPA or WPA2) for the example to use.
+
+    choice ESP_WIFI_SAE_MODE
+        prompt "WPA3 SAE mode selection"
+        depends on EXAMPLE_WIFI_STAT_MODE
+        default ESP_WPA3_SAE_PWE_BOTH
+        help
+            Select mode for SAE as Hunt and Peck, H2E or both.
+        config ESP_WPA3_SAE_PWE_HUNT_AND_PECK
+            bool "HUNT AND PECK"
+        config ESP_WPA3_SAE_PWE_HASH_TO_ELEMENT
+            bool "H2E"
+        config ESP_WPA3_SAE_PWE_BOTH
+            bool "BOTH"
+    endchoice
+
+    config ESP_WIFI_PW_ID
+        string "PASSWORD IDENTIFIER"
+        depends on EXAMPLE_WIFI_STAT_MODE
+        depends on  ESP_WPA3_SAE_PWE_HASH_TO_ELEMENT|| ESP_WPA3_SAE_PWE_BOTH
+        default ""
+        help
+            password identifier for SAE H2E
+
+    config ESP_MAXIMUM_RETRY
+        int "Maximum retry"
+        default 5
+        help
+            Set the Maximum retry to avoid station reconnecting to the AP unlimited when the AP is really inexistent.
+
+    choice ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD
+        prompt "WiFi Scan auth mode threshold"
+        depends on EXAMPLE_WIFI_STAT_MODE
+        default ESP_WIFI_AUTH_WPA2_PSK
+        help
+            The weakest authmode to accept in the scan mode.
+            This value defaults to ESP_WIFI_AUTH_WPA2_PSK incase password is present and ESP_WIFI_AUTH_OPEN is used.
+            Please select ESP_WIFI_AUTH_WEP/ESP_WIFI_AUTH_WPA_PSK incase AP is operating in WEP/WPA mode.
+
+        config ESP_WIFI_AUTH_OPEN
+            bool "OPEN"
+        config ESP_WIFI_AUTH_WEP
+            bool "WEP"
+        config ESP_WIFI_AUTH_WPA_PSK
+            bool "WPA PSK"
+        config ESP_WIFI_AUTH_WPA2_PSK
+            bool "WPA2 PSK"
+        config ESP_WIFI_AUTH_WPA_WPA2_PSK
+            bool "WPA/WPA2 PSK"
+        config ESP_WIFI_AUTH_WPA3_PSK
+            bool "WPA3 PSK"
+        config ESP_WIFI_AUTH_WPA2_WPA3_PSK
+            bool "WPA2/WPA3 PSK"
+        config ESP_WIFI_AUTH_WAPI_PSK
+            bool "WAPI PSK"
+    endchoice
 
 endmenu

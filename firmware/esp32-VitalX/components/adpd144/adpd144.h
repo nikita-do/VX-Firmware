@@ -9,11 +9,15 @@
 #include "driver/i2c_master.h"
 #include "esp_err.h"
 
+/* ------------------------- Defines  --------------------------------------- */
 #define I2C_SCL_IO_PIN 36
 #define I2C_SDA_IO_PIN 35
 #define PORT_NUMBER I2C_NUM_0
 #define MASTER_FREQUENCY 400000 // Set the master frequency to 400 kHz
-#define DEVICE_ADDRESS 0x64
+#define DEVICE_ADDRESS 0x64 // ADPD144 I2C address
+
+#define REG_VALUE_NUM_BYTES (2)
+#define REG_ADDR_NUM_BYTES (1)
 
 // Define register addresses
 #define REG_STATUS            0x00  // Status register
@@ -77,7 +81,7 @@ typedef struct
 {
     i2c_device_config_t i2c_dev_conf;       /*!< Configuration for adpd device */
     i2c_master_dev_handle_t i2c_dev_handle; /*!< I2C device handle */
-    uint8_t *buffer;                        /*!< I2C transaction buffer */
+    uint8_t buffer[REG_VALUE_NUM_BYTES + REG_ADDR_NUM_BYTES]; /*!< I2C transaction buffer */
 } i2c_adpd144_t, *i2c_adpd144_handle_t;
 
 typedef struct {
@@ -86,6 +90,8 @@ typedef struct {
 } adpd144_register_t;
 
 esp_err_t adpd144_init();
+void adpd144_start(void);
+void adpd144_stop(void);
 void adpd144_readReg(uint8_t nAddr, uint16_t *pnData);
 void adpd144_writeReg(uint8_t nAddr, uint16_t nRegValue);
 esp_err_t adpd144_readRedValue(uint32_t *data, uint8_t len);

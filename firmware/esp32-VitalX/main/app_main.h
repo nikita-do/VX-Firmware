@@ -1,7 +1,6 @@
 /**
  * Contain shared structures, macros between source files
  * 
- * TODO: Create a header file for each source file
  */
 
 #ifndef APP_MAIN_H
@@ -58,5 +57,6 @@ void check_time(void);
 const char* get_timestamp();
 
 void wifi_provisioning(void);
+void wifi_init_sta(void);
 
 #endif // APP_MAIN_H

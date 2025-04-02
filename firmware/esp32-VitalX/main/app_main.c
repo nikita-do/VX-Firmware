@@ -1,9 +1,9 @@
 /**
  * @file app_main.c
  * @brief Main application file
- * 
+ *
  * The application reads the GSR, ECG, PPG IR, and PPG Red values from the sensors and publishes them to the MQTT broker. The application also subscribes to the MQTT broker for the commands to start and stop the data publishing.
- * 
+ *
  * @version 1.0.0
  * @date 2025-03-20
  */
@@ -16,7 +16,7 @@
 /**************************************************************************************************
  *                                      Macro Definition
  **************************************************************************************************/
-#define SAMPLE_FREQUENCY 50 // Hz
+#define SAMPLE_FREQUENCY 50                     // Hz
 #define SAMPLE_PERIOD (1000 / SAMPLE_FREQUENCY) // ms
 #define RELOAD_TIMER_PERIOD pdMS_TO_TICKS(SAMPLE_PERIOD)
 
@@ -114,6 +114,8 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
         if (strncmp(event->data, "start", event->data_len) == 0)
         {
             ESP_LOGI(TAG, "Received 'start' command, publishing data...");
+            /* Initiate PPG */
+            adpd144_start();
             vTaskResume(xTimerTask);
         }
 
@@ -122,6 +124,8 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
         {
             ESP_LOGI(TAG, "Received 'stop' command, stopping data publishing...");
             vTaskSuspend(xTimerTask);
+            // TODO: Standby PPG sensor
+            adpd144_stop();
         }
         break;
     case MQTT_EVENT_ERROR:
@@ -170,7 +174,7 @@ void timer_read_sensors(void *arg)
         ESP_ERROR_CHECK(adpd144_readIRValue(&ppg_ir_value, 1));
         ESP_ERROR_CHECK(adpd144_readRedValue(&ppg_red_value, 1));
 
-        // Print data for serial visualizing 
+        // Print data for serial visualizing
         // printf("gsr:%u,ecg:%u,ir:%ld,red:%ld\n", gsr.voltage_value, ecg.voltage_value, ppg_ir_value, ppg_red_value);
 
         cJSON_ReplaceItemInObject(json, "time", cJSON_CreateString(get_timestamp()));
@@ -183,7 +187,7 @@ void timer_read_sensors(void *arg)
         char *message = cJSON_PrintUnformatted(json);
 
         // Publish the data with QoS 1
-        esp_mqtt_client_publish(client, MQTT_TOPIC("data") , message, 0, 0, 0);
+        esp_mqtt_client_publish(client, MQTT_TOPIC("data"), message, 0, 0, 0);
 
         // Free the JSON string
         free(message);
@@ -202,21 +206,27 @@ void app_main(void)
     esp_log_level_set("*", ESP_LOG_WARN);
 
     // Uncomment for debugging
-    // esp_log_level_set("*", ESP_LOG_INFO);
-    // esp_log_level_set("mqtt_client", ESP_LOG_VERBOSE);
-    // esp_log_level_set("mqtt_example", ESP_LOG_VERBOSE);
-    // esp_log_level_set("transport_base", ESP_LOG_VERBOSE);
-    // esp_log_level_set("esp-tls", ESP_LOG_VERBOSE);
-    // esp_log_level_set("transport", ESP_LOG_VERBOSE);
-    // esp_log_level_set("outbox", ESP_LOG_VERBOSE);
+    esp_log_level_set("*", ESP_LOG_INFO);
+    esp_log_level_set("mqtt_client", ESP_LOG_VERBOSE);
+    esp_log_level_set("mqtt_example", ESP_LOG_VERBOSE);
+    esp_log_level_set("transport_base", ESP_LOG_VERBOSE);
+    esp_log_level_set("esp-tls", ESP_LOG_VERBOSE);
+    esp_log_level_set("transport", ESP_LOG_VERBOSE);
+    esp_log_level_set("outbox", ESP_LOG_VERBOSE);
 
-    /* Initiate hardware */
+    /* Initialize hardware */
     ESP_ERROR_CHECK(adc_oneshot_init(gsr.adc_unit, gsr.channel, &gsr.unit_handle, &gsr.cali_handle));
     ESP_ERROR_CHECK(adc_oneshot_init(ecg.adc_unit, ecg.channel, &ecg.unit_handle, &ecg.cali_handle));
     ESP_ERROR_CHECK(timer_init());
     ESP_ERROR_CHECK(adpd144_init());
 
+    #ifdef CONFIG_EXAMPLE_WIFI_PROV_MODE
     wifi_provisioning();
+    #endif
+
+    #ifdef CONFIG_EXAMPLE_WIFI_STAT_MODE
+    wifi_init_sta();
+    #endif
 
     check_time();
 
