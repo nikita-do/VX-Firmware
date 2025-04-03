@@ -4,21 +4,23 @@
  *
  * The application reads the GSR, ECG, PPG IR, and PPG Red values from the sensors and publishes them to the MQTT broker. The application also subscribes to the MQTT broker for the commands to start and stop the data publishing.
  *
- * @version 1.0.0
- * @date 2025-03-20
+ * @version 1.0.1
+ * @date 2025-04-03
  */
 #include "app_main.h"
 
 #include "adpd144.h"
 #include "cJSON.h"
 #include "mqtt_client.h"
+#include "esp_timer.h"
 
 /**************************************************************************************************
  *                                      Macro Definition
  **************************************************************************************************/
-#define SAMPLE_FREQUENCY 50                     // Hz
+#define SAMPLE_FREQUENCY 100                     // Hz
 #define SAMPLE_PERIOD (1000 / SAMPLE_FREQUENCY) // ms
 #define RELOAD_TIMER_PERIOD pdMS_TO_TICKS(SAMPLE_PERIOD)
+#define SAMPLE_BATCH 100 // Number of samples to be sent in one batch
 
 /**************************************************************************************************
  *                                     Global declaration
@@ -26,11 +28,19 @@
 static const char *TAG = "app_main";
 // Task handles
 static TaskHandle_t xTimerTask = NULL;
+static TaskHandle_t xMqttTask = NULL;
+
+void timer_read_sensor_task(void *arg);
+void mqtt_publish_task(void *arg);
+
 // Extern varialbes
 extern esp_mqtt_client_handle_t client;
 
-static long unsigned int ppg_ir_value;
-static long unsigned int ppg_red_value;
+static uint32_t gsr_array[SAMPLE_BATCH] = {0};
+static uint32_t ecg_array[SAMPLE_BATCH] = {0};
+static uint32_t ir_array[SAMPLE_BATCH] = {0};
+static uint32_t red_array[SAMPLE_BATCH] = {0};
+static uint32_t time_array[SAMPLE_BATCH] = {0};
 
 AdcConfig_t gsr = {
     .adc_unit = ADC_UNIT_1,
@@ -116,15 +126,16 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
             ESP_LOGI(TAG, "Received 'start' command, publishing data...");
             /* Initiate PPG */
             adpd144_start();
-            vTaskResume(xTimerTask);
+            // Create the timer task
+            xTaskCreate(timer_read_sensor_task, "TimerTask", 4096, NULL, 5, &xTimerTask);
         }
 
         // Check if the received cmd is stop
         if (strncmp(event->data, "stop", event->data_len) == 0)
         {
             ESP_LOGI(TAG, "Received 'stop' command, stopping data publishing...");
-            vTaskSuspend(xTimerTask);
-            // TODO: Standby PPG sensor
+            vTaskDelete(xTimerTask);
+            xTimerTask = NULL; // Reset the task handle
             adpd144_stop();
         }
         break;
@@ -147,21 +158,18 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
 /**************************************************************************************************
  *	                                    Task functions
  **************************************************************************************************/
-void timer_read_sensors(void *arg)
-{
-    // Create a JSON object
-    cJSON *json = cJSON_CreateObject();
-    cJSON_AddStringToObject(json, "time", "");
-    cJSON_AddNumberToObject(json, "gsr", 0);
-    cJSON_AddNumberToObject(json, "ecg", 0);
-    cJSON_AddNumberToObject(json, "ppg_ir", 0);
-    cJSON_AddNumberToObject(json, "ppg_red", 0);
 
-    int msg_id;
+void timer_read_sensor_task(void *arg)
+{
+    int64_t start_time = esp_timer_get_time();
+    int64_t elapsed_time_ms = 0;
+    uint8_t sample_count = 0;
 
     while (1)
     {
+        // Wait for the timer to notify
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
         //-------------ADC1 Oneshot Read---------------//
         ESP_ERROR_CHECK(adc_oneshot_read(gsr.unit_handle, gsr.channel, &gsr.raw_value));
         ESP_ERROR_CHECK(adc_cali_raw_to_voltage(gsr.cali_handle, gsr.raw_value, &gsr.voltage_value));
@@ -171,26 +179,66 @@ void timer_read_sensors(void *arg)
         ESP_ERROR_CHECK(adc_cali_raw_to_voltage(ecg.cali_handle, ecg.raw_value, &ecg.voltage_value));
 
         //-------------Read PPG Values---------------//
-        ESP_ERROR_CHECK(adpd144_readIRValue(&ppg_ir_value, 1));
-        ESP_ERROR_CHECK(adpd144_readRedValue(&ppg_red_value, 1));
+        ESP_ERROR_CHECK(adpd144_readIRValue(&ir_array[sample_count], 1));
+        ESP_ERROR_CHECK(adpd144_readRedValue(&red_array[sample_count], 1));
 
-        // Print data for serial visualizing
-        // printf("gsr:%u,ecg:%u,ir:%ld,red:%ld\n", gsr.voltage_value, ecg.voltage_value, ppg_ir_value, ppg_red_value);
+        ecg_array[sample_count] = ecg.voltage_value;
+        gsr_array[sample_count] = gsr.voltage_value;
 
-        cJSON_ReplaceItemInObject(json, "time", cJSON_CreateString(get_timestamp()));
-        cJSON_ReplaceItemInObject(json, "gsr", cJSON_CreateNumber(gsr.voltage_value));
-        cJSON_ReplaceItemInObject(json, "ecg", cJSON_CreateNumber(ecg.voltage_value));
-        cJSON_ReplaceItemInObject(json, "ppg_ir", cJSON_CreateNumber(ppg_ir_value));
-        cJSON_ReplaceItemInObject(json, "ppg_red", cJSON_CreateNumber(ppg_red_value));
+        // Calculate elapsed time
+        elapsed_time_ms = (esp_timer_get_time() - start_time) / 1000; // Convert microseconds to milliseconds
+
+        time_array[sample_count] = elapsed_time_ms; // Store elapsed time in milliseconds
+
+        sample_count++; // Increment sample count
+        if (sample_count == SAMPLE_BATCH)
+        {
+            sample_count = 0; // Reset sample count
+            // Notify the MQTT task to publish data
+            xTaskNotifyGive(xMqttTask);
+        }
+    }
+}
+void mqtt_publish_task(void *arg)
+{
+    while (1)
+    {
+        // Wait for the timer task to notify
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        // Create a JSON object
+        cJSON *json = cJSON_CreateObject();
+        cJSON *gsr_msg_array = cJSON_CreateArray();
+        cJSON *ecg_msg_array = cJSON_CreateArray();
+        cJSON *ir_msg_array = cJSON_CreateArray();
+        cJSON *red_msg_array = cJSON_CreateArray();
+        cJSON *time_msg_array = cJSON_CreateArray();
+
+        // Add stored sensor data to the JSON array
+        for (int i = 0; i < SAMPLE_BATCH; i++)
+        {
+            cJSON_AddItemToArray(time_msg_array, cJSON_CreateNumber(time_array[i]));
+            cJSON_AddItemToArray(gsr_msg_array, cJSON_CreateNumber(gsr_array[i]));
+            cJSON_AddItemToArray(ecg_msg_array, cJSON_CreateNumber(ecg_array[i]));
+            cJSON_AddItemToArray(ir_msg_array, cJSON_CreateNumber(ir_array[i]));
+            cJSON_AddItemToArray(red_msg_array, cJSON_CreateNumber(red_array[i]));
+        }
+
+        cJSON_AddItemToObject(json, "time", time_msg_array);
+        cJSON_AddItemToObject(json, "gsr", gsr_msg_array);
+        cJSON_AddItemToObject(json, "ecg", ecg_msg_array);
+        cJSON_AddItemToObject(json, "ir", ir_msg_array);
+        cJSON_AddItemToObject(json, "red", red_msg_array);
 
         // Convert JSON to string
         char *message = cJSON_PrintUnformatted(json);
 
         // Publish the data with QoS 1
-        esp_mqtt_client_publish(client, MQTT_TOPIC("data"), message, 0, 0, 0);
+        esp_mqtt_client_publish(client, MQTT_TOPIC("data"), message, 0, 1, 0);
 
         // Free the JSON string
         free(message);
+        cJSON_Delete(json); // Free the JSON object
     }
 }
 
@@ -220,19 +268,23 @@ void app_main(void)
     ESP_ERROR_CHECK(timer_init());
     ESP_ERROR_CHECK(adpd144_init());
 
-    #ifdef CONFIG_EXAMPLE_WIFI_PROV_MODE
+#ifdef CONFIG_EXAMPLE_WIFI_PROV_MODE
     wifi_provisioning();
-    #endif
+#endif
 
-    #ifdef CONFIG_EXAMPLE_WIFI_STAT_MODE
+#ifdef CONFIG_EXAMPLE_WIFI_STAT_MODE
     wifi_init_sta();
-    #endif
+#endif
 
     check_time();
 
     mqtt_app_start();
 
-    // Create the timer task
-    xTaskCreate(timer_read_sensors, "TimerTask", 4096, NULL, 5, &xTimerTask);
-    vTaskSuspend(xTimerTask);
+    // Create the MQTT task
+    xTaskCreate(mqtt_publish_task, "MqttTask", 4096, NULL, 5, &xMqttTask);
+    if (xMqttTask == NULL)
+    {
+        ESP_LOGE(TAG, "Failed to create MQTT task");
+        return;
+    }
 }
