@@ -20,7 +20,7 @@
 #define SAMPLE_FREQUENCY 100                     // Hz
 #define SAMPLE_PERIOD (1000 / SAMPLE_FREQUENCY) // ms
 #define RELOAD_TIMER_PERIOD pdMS_TO_TICKS(SAMPLE_PERIOD)
-#define SAMPLE_BATCH 100 // Number of samples to be sent in one batch
+#define SAMPLE_BATCH 10 // Number of samples to be sent in one batch
 
 /**************************************************************************************************
  *                                     Global declaration
@@ -251,16 +251,7 @@ void app_main(void)
     ESP_LOGI(TAG, "[APP] Free memory: %" PRIu32 " bytes", esp_get_free_heap_size());
     ESP_LOGI(TAG, "[APP] IDF version: %s", esp_get_idf_version());
 
-    esp_log_level_set("*", ESP_LOG_WARN);
-
-    // Uncomment for debugging
-    esp_log_level_set("*", ESP_LOG_INFO);
-    esp_log_level_set("mqtt_client", ESP_LOG_VERBOSE);
-    esp_log_level_set("mqtt_example", ESP_LOG_VERBOSE);
-    esp_log_level_set("transport_base", ESP_LOG_VERBOSE);
-    esp_log_level_set("esp-tls", ESP_LOG_VERBOSE);
-    esp_log_level_set("transport", ESP_LOG_VERBOSE);
-    esp_log_level_set("outbox", ESP_LOG_VERBOSE);
+    esp_log_level_set("*", ESP_LOG_MAX);
 
     /* Initialize hardware */
     ESP_ERROR_CHECK(adc_oneshot_init(gsr.adc_unit, gsr.channel, &gsr.unit_handle, &gsr.cali_handle));

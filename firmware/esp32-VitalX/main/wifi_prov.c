@@ -32,7 +32,7 @@
 #endif /* CONFIG_EXAMPLE_PROV_TRANSPORT_SOFTAP */
 #include "qrcode.h"
 
-static const char *TAG = "app";
+static const char *TAG = "app_wifi_prov";
 
 #if CONFIG_EXAMPLE_PROV_SECURITY_VERSION_2
 #if CONFIG_EXAMPLE_PROV_SEC2_DEV_MODE

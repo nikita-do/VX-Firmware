@@ -1,37 +1,53 @@
-# Description: This script subscribes to a MQTT broker and receives sensor data from a device.
-#              The script processes the data and stores it in a CSV file.
-#              It also displays a real-time plot of the PPG data using Matplotlib.
-
+# TODO: Add a high-pass filter to the PPG data
+import json
+import numpy as np
+import pyqtgraph as pg
 import paho.mqtt.client as mqtt
-
-from collections import deque
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation  
-
 import time
 import csv
-import json
-
-import numpy as np
+from collections import deque
 
 # --------------- High-pass Filter --------------- #
-fc = 0.5  # Cutoff frequency in Hz
-fs = 50    # Sampling frequency in Hz (must be > 2 * fc)
-T = 1 / fs  # Sampling interval
-tau = 1 / (2 * np.pi * fc)  # Time constant
-alpha = tau / (tau + T)  # Filter coefficient
-
 def high_pass_filter(x, x_prev, y_prev):
+    fc = 0.5  # Cutoff frequency in Hz
+    fs = 50    # Sampling frequency in Hz (must be > 2 * fc)
+    T = 1 / fs  # Sampling interval
+    tau = 1 / (2 * np.pi * fc)  # Time constant
+    alpha = tau / (tau + T)  # Filter coefficient
+
     """High-pass filter to remove DC component."""
     return alpha * y_prev + alpha * (x - x_prev)
 
 # --------------- CSV File --------------- #
 filename = time.strftime("%Y-%m-%d_%H-%M-%S") + ".csv" # Generate a safe filename with timestamp
-f = open(filename, "w", newline="") # Open the CSV file
+f = open(filename, "a", newline="") # Open the CSV file
 output_writer = csv.writer(f) # Define CSV writer
-output_writer.writerow(["time","gsr","ecg","ir", "red", "ppg"]) # Write the header
+output_writer.writerow(["Time(ms)","GSR","ECG","IR Channel", "Red Channel", "PPG"]) # Write the header
 print(f"CSV file created: {filename}")
 
+def write_batch_to_csv(time_list, ir_list, red_list, ecg_list, gsr_list, ppg_avg_list):
+    """ Writes a batch of sensor readings to a CSV file. """
+
+    # Write all rows at once
+    rows = zip(time_list, ir_list, red_list, ecg_list, gsr_list, ppg_avg_list)
+    output_writer.writerows(rows)
+
+    print(f"✅ Successfully saved {len(time_list)} samples to {filename}")
+
+
+# --------------- PyQTGraph --------------- #
+app = pg.mkQApp()
+win = pg.GraphicsLayoutWidget()
+plot = win.addPlot()
+curve = plot.plot()
+
+# Data storage (deque for smooth animation)
+max_length = 1000  # Store last 100 data points
+time_series = deque([0], maxlen=max_length)
+ir_series = deque([0], maxlen=max_length)
+red_series = deque([0], maxlen=max_length)
+average_series = deque([0], maxlen=max_length)
+processed_series = deque([0], maxlen=max_length)
 
 # --------------- MQTT and Data processing --------------- #
 # HiveMQ Cloud Credentials
@@ -41,47 +57,13 @@ USERNAME = "ngocdo"
 PASSWORD = "Ng19102002"
 TOPICS_SUBSCRIBE = [("VitalX_001/status", 0), ("VitalX_001/data", 1), ("VitalX_001/cmd", 1)]  # List of (topic, QoS)
 
-# Data storage (deque for smooth animation)
-max_length = 100  # Store last 100 data points
-time_series = deque([0], maxlen=max_length)
-ir_series = deque([0], maxlen=max_length)
-red_series = deque([0], maxlen=max_length)
-average_series = deque([0], maxlen=max_length)
-processed_series = deque([0], maxlen=max_length)
+def plot_data(time_series, ir_series):
+    if len(time_series) != len(ir_series):
+        print(f"Mismatch in time and sample lengths: {len(time_series)} vs {len(ir_series)}")
+        return
 
-# Data processing function
-def process_data(msg):
-    try:
-        data = json.loads(msg.payload.decode("utf-8"))
-        # Extract sensor data from the JSON message
-        ir = data.get("ppg_ir")
-        red = data.get("ppg_red")
-        ecg = data.get("ecg")
-        gsr = data.get("gsr")
-        time = data.get("time")
-
-        if not isinstance(data, dict):  # Ensure it's a dictionary
-            raise ValueError("Received data is not a dictionary")
-        
-        if ir is not None and red is not None:
-            ppg_avg = (-1)*(ir + red) / 2  # Compute average from inverted PPG signals
-
-            # Apply high-pass filter to remove DC component
-            filter_ppg = high_pass_filter(ppg_avg, average_series[-1], processed_series[-1])
-            processed_series.append(filter_ppg)
-
-            time_series.append(time_series[-1]+1)
-            ir_series.append(ir)
-            red_series.append(red)
-            average_series.append(ppg_avg)
-
-            output_writer.writerow([time, gsr, ecg, ir, red, filter_ppg])
-
-        else:    
-            print("Invalid JSON format: Missing 'ir' or 'red'")
-
-    except json.JSONDecodeError as e:
-        print(f"Invalid JSON format: {msg.payload.decode('utf-8')} - Error: {e}")
+    # Update PyQtGraph plot
+    curve.setData(np.array(time_series), np.array(ir_series))
 
 # Callback when the client connects to the broker
 def on_connect(client, userdata, flags, rc):
@@ -90,26 +72,51 @@ def on_connect(client, userdata, flags, rc):
         client.subscribe(TOPICS_SUBSCRIBE)
     else:
         print(f"Connection failed with code {rc}")
-
-# Callback when a message is received
+        
 def on_message(client, userdata, msg):
     if msg.topic == "VitalX_001/data":  # Process only messages from "data" topic
-        process_data(msg)
+        try:
+            data = json.loads(msg.payload.decode("utf-8"))
+
+            if not isinstance(data, dict):  # Ensure it's a dictionary
+                raise ValueError("Received data is not a dictionary")
+            
+            # Extract sensor data from the JSON message
+            time_list = data.get("time", [])
+            ir_list = data.get("ir", [])
+            red_list = data.get("red", [])
+            ecg_list = data.get("ecg", [])
+            gsr_list = data.get("gsr", [])
+
+            # Ensure they are lists, not single values
+            if not (isinstance(time_list, list) and isinstance(ir_list, list) and isinstance(red_list, list) and isinstance(ecg_list, list) and isinstance(gsr_list, list)):
+                # If any of the lists are not present or not lists, print an error message
+                print("❌ Invalid JSON format: 'time', 'ir', 'red', 'ecg', or 'gsr' is missing or not a list.")
+                return
+            
+            # Ensure all lists have the same length
+            batch_size = len(time_list)
+            if not all(len(lst) == batch_size for lst in [ir_list, red_list, ecg_list, gsr_list]):
+                print("❌ Error: Mismatch in batch sizes of sensor data.")
+                print(f"Batch sizes: time={len(time_list)}, ir={len(ir_list)}, red={len(red_list)}, ecg={len(ecg_list)}, gsr={len(gsr_list)}")
+                return
+            
+            # Compute PPG Avg for the entire batch
+            ppg_avg_list = [-1 * (ir + red) / 2 for ir, red in zip(ir_list, red_list)]
+
+            # Write to CSV
+            write_batch_to_csv(time_list, ir_list, red_list, ecg_list, gsr_list, ppg_avg_list)
+
+            # Plot the last batch of PPG Avg values
+            plot_data(time_list, ppg_avg_list)
+
+        except json.JSONDecodeError as e:
+            print(f"Invalid JSON format: {msg.payload.decode('utf-8')} - Error: {e}")
+
+        except Exception as e:
+            print(f"❌ Unexpected error: {e}")
     else:
         print(f"Received message: {msg.payload.decode()} on topic {msg.topic}")
-
-# Update plot function
-def update_plot(frame):
-    """Update the plot dynamically with new data."""
-    line_ir.set_data(time_series, ir_series)
-    line_red.set_data(time_series, red_series)
-    line_avg.set_data(time_series, processed_series)
-
-    ax.relim()  # Recalculate limits
-    ax.autoscale_view()  # Autoscale
-
-    return line_ir, line_red, line_avg
-
 
 # --------------- Application --------------- #
 # Setup MQTT client
@@ -119,26 +126,13 @@ client.tls_set()  # Enables TLS encryption
 client.on_connect = on_connect
 client.on_message = on_message
 
-# Matplotlib real-time plot
-fig, ax = plt.subplots()
-ax.set_title("Real-Time Sensor Data")
-ax.set_xlabel("Time")
-ax.set_ylabel("Sensor Values")
-line_ir, = ax.plot([], [], "r-", label="IR")  # Red line
-line_red, = ax.plot([], [], "b-", label="Red")  # Blue line
-line_avg, = ax.plot([], [], "g-", label="Average")  # Green line
-ax.legend()
-
-# Animation function
-ani = FuncAnimation(fig, update_plot, interval=20)
-
 # Connect and start the loop
 try:
     client.connect(BROKER, PORT, 60)
     client.loop_start()  # Non-blocking loop
     # Show the real-time plot
-    plt.show()
-    
+    win.show()
+    app.exec()
     while True:
         time.sleep(1)  # Keep the script running
 
