@@ -21,6 +21,17 @@ menu "MQTT Configuration"
         default "your-broker-pasword"
         help
             Password to connect to the broker
+    
+    config BROKER_CERTIFICATE_OVERRIDE
+        string "Broker certificate override"
+        default ""
+        help
+            Please leave empty if broker certificate included from a textfile; otherwise fill in a base64 part of PEM
+            format certificate
+
+    config BROKER_CERTIFICATE_OVERRIDDEN
+        bool
+        default y if BROKER_CERTIFICATE_OVERRIDE != ""
 
 
 endmenu
@@ -35,6 +46,12 @@ menu "SNTP Configuration"
 endmenu
 
 menu "WiFi Configuration"
+
+    config EXAMPLE_DEVICE_NAME_PREFIX
+        string "Device name prefix"
+        default "VX_"
+        help
+            Prefix for the device name. The device name will be set to this prefix + MAC address.
 
     choice EXAMPLE_WIFI_CONFIGURATION_MODE
         bool "WiFi Configuration Mode"

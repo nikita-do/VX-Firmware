@@ -7,6 +7,8 @@
    CONDITIONS OF ANY KIND, either express or implied.
 */
 
+#include "app_main.h" // for led blinking
+
 #include <stdio.h>
 #include <string.h>
 
@@ -21,8 +23,6 @@
 
 #include <wifi_provisioning/manager.h>
 
-#ifdef CONFIG_EXAMPLE_WIFI_PROV_MODE
-
 #ifdef CONFIG_EXAMPLE_PROV_TRANSPORT_BLE
 #include <wifi_provisioning/scheme_ble.h>
 #endif /* CONFIG_EXAMPLE_PROV_TRANSPORT_BLE */
@@ -32,7 +32,8 @@
 #endif /* CONFIG_EXAMPLE_PROV_TRANSPORT_SOFTAP */
 #include "qrcode.h"
 
-static const char *TAG = "app";
+static const char *TAG = "app_wifi_prov";
+char service_name[12];
 
 #if CONFIG_EXAMPLE_PROV_SECURITY_VERSION_2
 #if CONFIG_EXAMPLE_PROV_SEC2_DEV_MODE
@@ -165,7 +166,20 @@ static void event_handler(void* arg, esp_event_base_t event_base,
                 break;
             case WIFI_EVENT_STA_DISCONNECTED:
                 ESP_LOGI(TAG, "Disconnected. Connecting to the AP again...");
-                esp_wifi_connect();
+                static int disconnected_time = 0;
+                disconnected_time++;
+                if (disconnected_time >= 5) {
+                    ESP_LOGW(TAG, "Disconnected for too long. Restarting ESP...");
+                    ESP_ERROR_CHECK(nvs_flash_erase());
+                    ESP_ERROR_CHECK(nvs_flash_init());
+                    esp_restart();
+                }
+                else 
+                {
+                    ESP_LOGI(TAG, "Disconnected for %d times", disconnected_time);
+                    esp_wifi_connect();
+                }
+                
                 break;
 #ifdef CONFIG_EXAMPLE_PROV_TRANSPORT_SOFTAP
             case WIFI_EVENT_AP_STACONNECTED:
@@ -220,10 +234,10 @@ static void wifi_init_sta(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 }
 
-static void get_device_service_name(char *service_name, size_t max)
+void get_device_service_name(char *service_name, size_t max)
 {
     uint8_t eth_mac[6];
-    const char *ssid_prefix = "PROV_";
+    const char *ssid_prefix = CONFIG_EXAMPLE_DEVICE_NAME_PREFIX;
     esp_wifi_get_mac(WIFI_IF_STA, eth_mac);
     snprintf(service_name, max, "%s%02X%02X%02X",
              ssid_prefix, eth_mac[3], eth_mac[4], eth_mac[5]);
@@ -312,6 +326,7 @@ const wifi_prov_event_handler_t wifi_prov_event_handler = {
 
 void wifi_provisioning(void)
 {
+    update_led_blink_period(LED_BLINK_PERIOD_PROVISIONING);
     /* Initialize NVS partition */
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -346,6 +361,13 @@ void wifi_provisioning(void)
 #endif /* CONFIG_EXAMPLE_PROV_TRANSPORT_SOFTAP */
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    /* What is the Device Service Name that we want
+         * This translates to :
+         *     - Wi-Fi SSID when scheme is wifi_prov_scheme_softap
+         *     - device name when scheme is wifi_prov_scheme_ble
+         */
+    get_device_service_name(service_name, sizeof(service_name));
 
     /* Configuration for the provisioning manager */
     wifi_prov_mgr_config_t config = {
@@ -392,14 +414,6 @@ void wifi_provisioning(void)
     /* If device is not yet provisioned start provisioning service */
     if (!provisioned) {
         ESP_LOGI(TAG, "Starting provisioning");
-
-        /* What is the Device Service Name that we want
-         * This translates to :
-         *     - Wi-Fi SSID when scheme is wifi_prov_scheme_softap
-         *     - device name when scheme is wifi_prov_scheme_ble
-         */
-        char service_name[12];
-        get_device_service_name(service_name, sizeof(service_name));
 
 #ifdef CONFIG_EXAMPLE_PROV_SECURITY_VERSION_1
         /* What is the security level that we want (0, 1, 2):
@@ -545,8 +559,11 @@ void wifi_provisioning(void)
         /* Wait for Wi-Fi connection */
         xEventGroupWaitBits(wifi_event_group, WIFI_CONNECTED_EVENT, true, true, portMAX_DELAY);
     }
+#else
+    //  while (1) {
+    //      ESP_LOGI(TAG, "Hello World!");
+    //      vTaskDelay(1000 / portTICK_PERIOD_MS);
+    //  }
 #endif
 
 }
-
-#endif
