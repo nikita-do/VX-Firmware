@@ -74,8 +74,6 @@ const char *get_timestamp();
 void wifi_provisioning(void);
 void get_device_service_name(char *service_name, size_t max);
 extern char service_name[12];
-extern SemaphoreHandle_t wifi_prov_semaphore;
-
 void update_led_blink_period(uint32_t period);
         
 #endif // APP_MAIN_H

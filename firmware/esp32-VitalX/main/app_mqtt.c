@@ -1,5 +1,17 @@
+/**
+ * @file app_mqtt.c
+ * @brief MQTT client implementation for ESP32, derived from esp-idf mqtt ssl example.
+ * 
+ * @version 0.2.0
+ * @date 2024-04-09
+ * 
+ * --------------- Change log ----------------
+ * v0.2.0 - Refactored topic subscription system
+ * v0.1.0 - Initial version, basic publish/subscribe
+ */
 #include "app_main.h"
 #include "mqtt_client.h"
+#include "esp_app_desc.h"
 
 static const char *TAG = "app_mqtt";
 esp_mqtt_client_handle_t client = NULL;
@@ -32,12 +44,15 @@ void mqtt_app_start(void)
             .authentication.password = CONFIG_BROKER_PASSWORD          
         },
         .session = {
-            .last_will.topic = MQTT_TOPIC("status"),
-            .last_will.msg = "offline",
+            .last_will.topic = MQTT_TOPIC("status_online"),
+            .last_will.msg = "false",
             .last_will.qos = 1,
             .last_will.retain = 1, // Ensure message is retained
-            .keepalive = 60, // After 2 minutes of inactivity, the broker will disconnect the client -> status = offline
+            .keepalive = 30, // After 0.5 minutes of inactivity, the broker will disconnect the client -> status = offline
         },
+        // .outbox = {
+        //     .limit = 4096, // Set outbox size to 10 messages
+        // },
     };
 
 #if CONFIG_BROKER_URL_FROM_STDIN
@@ -66,7 +81,21 @@ void mqtt_app_start(void)
 #endif /* CONFIG_BROKER_URL_FROM_STDIN */
 
     client = esp_mqtt_client_init(&mqtt_cfg);
+
     /* The last argument may be used to pass data to the event handler, in this example mqtt_event_handler */
     esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
     esp_mqtt_client_start(client);
 }
+
+
+void mqtt_publish_startUpMsg(void)
+{
+    const esp_app_desc_t* app_desc = esp_app_get_description();
+
+    esp_mqtt_client_publish(client, MQTT_TOPIC("attribute/device_name"), service_name, 0, 1, 1);
+    esp_mqtt_client_publish(client, MQTT_TOPIC("attribute/firmware_version"), app_desc->version, 0, 1, 1);
+
+    ESP_LOGI(TAG, "Device name: %s", service_name);
+    esp_mqtt_client_publish(client, MQTT_TOPIC("status_online"), "true", 0, 1, 1);
+}
+
