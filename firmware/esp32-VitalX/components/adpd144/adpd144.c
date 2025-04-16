@@ -13,17 +13,17 @@ static const char LOG_TAG[] = "i2c-adpd";
 const adpd144_register_t register_config[] = {
     {REG_MODE, 0x0001},                 // program mode
     {REG_SAMPLE_CLK, 0x0080},           // start the sample clock (32 kHz)
-    {REG_INT_IO_CTL, 0x0005},   
+    {REG_INT_IO_CTL, 0x0005},           // enable interrupt drive
     {REG_SLOT_EN, 0x30A9},
-    {REG_F_SAMPLE, 0x000A},
-    {REG_PD_LED_SELECT, 0x0116},
-    {REG_NUM_AVG, 0x0330},
-    {REG_SLOTA_CH1_OFFSET, 0x3FFF},
-    {REG_SLOTA_CH2_OFFSET, 0x3FFF},
-    {REG_SLOTA_CH3_OFFSET, 0x1FF0},
-    {REG_SLOTA_CH4_OFFSET, 0x1FF0},
-    {REG_SLOTB_CH1_OFFSET, 0x3FFF},
-    {REG_SLOTB_CH2_OFFSET, 0x3FFF},
+    {REG_F_SAMPLE, 0x0004},             // sampling rate = 250 Hz
+    {REG_PD_LED_SELECT, 0x0116},        // 
+    {REG_NUM_AVG, 0x0330},              // Average sample = 8
+    {REG_SLOTA_CH1_OFFSET, 0x3FFF},     // not used
+    {REG_SLOTA_CH2_OFFSET, 0x3FFF},     // not used
+    {REG_SLOTA_CH3_OFFSET, 0x1FF0},     // half scale
+    {REG_SLOTA_CH4_OFFSET, 0x1FF0},     // half scale
+    {REG_SLOTB_CH1_OFFSET, 0x3FFF},     // not used
+    {REG_SLOTB_CH2_OFFSET, 0x3FFF},     // not used
     {REG_SLOTB_CH3_OFFSET, 0x1FF0},
     {REG_SLOTB_CH4_OFFSET, 0x1FF0},
     {REG_ILED1_COARSE, 0x3005},
@@ -35,8 +35,8 @@ const adpd144_register_t register_config[] = {
     {REG_SLOTB_NUMPULSES, 0x0813},
     {REG_SLOTA_AFEMODE, 0x21F3},
     {REG_SLOTB_AFEMODE, 0x21F3},
-    {REG_SLOTA_GAIN, 0x1C36},
-    {REG_SLOTB_GAIN, 0x1C36},
+    {REG_SLOTA_GAIN, 0x1C36},           // TIA gain = 50k
+    {REG_SLOTB_GAIN, 0x1C36},           // TIA gain = 50k
     {REG_ADC_TIMING, 0x0040},
     {REG_MODE, 0x0002},                 // sample mode
     {0xFF, 0xFFFF}                      // signal the end of list

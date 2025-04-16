@@ -64,7 +64,6 @@ esp_err_t adc_oneshot_init(adc_unit_t unit, adc_channel_t channel, adc_oneshot_u
 // app_mqtt.c
 void log_error_if_nonzero(const char *message, int error_code);
 void mqtt_app_start(void);
-void mqtt_publish_startUpMsg(void);
 
 //app_time.c
 void check_time(void);
@@ -72,8 +71,6 @@ const char *get_timestamp();
 
 // wifi_prov.c and wifi_stat.c
 void wifi_provisioning(void);
-void get_device_service_name(char *service_name, size_t max);
-extern char service_name[12];
 void update_led_blink_period(uint32_t period);
         
 #endif // APP_MAIN_H

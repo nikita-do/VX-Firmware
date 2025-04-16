@@ -33,7 +33,7 @@
 #include "qrcode.h"
 
 static const char *TAG = "app_wifi_prov";
-char service_name[12];
+static char service_name[12];
 
 #if CONFIG_EXAMPLE_PROV_SECURITY_VERSION_2
 #if CONFIG_EXAMPLE_PROV_SEC2_DEV_MODE
@@ -234,7 +234,7 @@ static void wifi_init_sta(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 }
 
-void get_device_service_name(char *service_name, size_t max)
+static void get_device_service_name(char *service_name, size_t max)
 {
     uint8_t eth_mac[6];
     const char *ssid_prefix = CONFIG_EXAMPLE_DEVICE_NAME_PREFIX;

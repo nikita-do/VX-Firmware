@@ -11,7 +11,6 @@
  */
 #include "app_main.h"
 #include "mqtt_client.h"
-#include "esp_app_desc.h"
 
 static const char *TAG = "app_mqtt";
 esp_mqtt_client_handle_t client = NULL;
@@ -86,16 +85,3 @@ void mqtt_app_start(void)
     esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
     esp_mqtt_client_start(client);
 }
-
-
-void mqtt_publish_startUpMsg(void)
-{
-    const esp_app_desc_t* app_desc = esp_app_get_description();
-
-    esp_mqtt_client_publish(client, MQTT_TOPIC("attribute/device_name"), service_name, 0, 1, 1);
-    esp_mqtt_client_publish(client, MQTT_TOPIC("attribute/firmware_version"), app_desc->version, 0, 1, 1);
-
-    ESP_LOGI(TAG, "Device name: %s", service_name);
-    esp_mqtt_client_publish(client, MQTT_TOPIC("status_online"), "true", 0, 1, 1);
-}
-

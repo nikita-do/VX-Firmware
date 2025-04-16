@@ -4,28 +4,32 @@
  *
  * The application reads the GSR, ECG, PPG IR, and PPG Red values from the sensors and publishes them to the MQTT broker. The application also subscribes to the MQTT broker for the commands to start and stop the data publishing.
  *
- * @version 0.2.0
- * @date 2025-04-09
- *
  * ---------------------- Change Log ----------------------
  * v0.1.0 - 2025-03-20
  *  - Integrated wifi configuration manager, MQTT client, and sensor reading tasks.
  *  - Added GSR, ECG, PPG IR, and PPG Red sensor reading tasks with sampling rate of 50 Hz
  * v0.1.1 - 2025-04-03
  *  - Sent data in batches of 100 samples to the MQTT broker.
- *  - Updated sampling rate to 100 Hz.
+ *  - Increased sampling rate to 100 Hz.
  *  - ADPD144 component updated: read from PD4 instead of PD3 for better ambient light cancelation
  *  - Improved code readability and organization.
  * v0.2.0 - 2025-04-09
  *  - Updated firmware version override via CMake
  *  - Modified the MQTT topic structure to include device ID and firmware version.
- *  - Added LED indication for connection status
+ *  - Added LED indicator for connection status
+ * v0.2.1 - 2025-04-16
+ *  - Increased sampling rate to 250 Hz.
+ *  - Added heap monitoring feature to track memory usage.
+ *  - Added TinyCBOR component: Encoded data as CBOR before sending to MQTT broker.
+ *  - ADPD144 component updated: Sampling rate = 250 Hz
+ *  - Improved LED indicator
  */
 #include "app_main.h"
 #include "driver/gpio.h"
+#include "esp_app_desc.h"
 
 #include "adpd144.h"
-#include "cJSON.h"
+#include "cbor.h"
 #include "mqtt_client.h"
 #include "esp_timer.h"
 
@@ -36,23 +40,15 @@
 /**************************************************************************************************
  *                                      Macro Definition
  **************************************************************************************************/
-#define SAMPLE_FREQUENCY 100                    // Hz
+#define SAMPLE_FREQUENCY 250                    // Hz
 #define SAMPLE_PERIOD (1000 / SAMPLE_FREQUENCY) // ms
 #define SENSOR_READ_PERIOD pdMS_TO_TICKS(SAMPLE_PERIOD)
-#define SAMPLE_BATCH 100 // Number of samples to be sent in one batch = 1 seconds of data
+#define SAMPLE_BATCH 250 // Number of samples to be sent in one batch = 1 seconds of data
 
 #define LED_GPIO GPIO_NUM_2 // GPIO2 for LED
 
-#define ADD_NUM_ARRAY_ITEM(array, val)                 \
-    do                                                 \
-    {                                                  \
-        cJSON *num = cJSON_CreateNumber(val);          \
-        if (!num || !cJSON_AddItemToArray(array, num)) \
-        {                                              \
-            printf("❌ Failed to add array item\n");   \
-            goto cleanup;                              \
-        }                                              \
-    } while (0)
+// #define HEAP_MONITOR_ENABLE  // Uncomment to enable heap monitoring
+
 /**************************************************************************************************
  *                                     Global declaration
  **************************************************************************************************/
@@ -75,6 +71,8 @@ static uint32_t ecg_array[SAMPLE_BATCH] = {0};
 static uint32_t ir_array[SAMPLE_BATCH] = {0};
 static uint32_t red_array[SAMPLE_BATCH] = {0};
 static uint32_t time_array[SAMPLE_BATCH] = {0};
+
+uint8_t buffer[10000] = {0}; // Buffer for CBOR encoding
 
 AdcConfig_t gsr = {
     .adc_unit = ADC_UNIT_1,
@@ -103,8 +101,22 @@ static int64_t elapsed_time_ms = 0;
 static uint16_t sample_count = 0;
 
 /**************************************************************************************************
- *                                  Timer Functions
+ *                                  Helper Functions
  **************************************************************************************************/
+/*------------------------------- CBOR function ----------------------------*/
+static void encode_int_array(CborEncoder *parent, const char *key, uint32_t *array, size_t len)
+{
+    cbor_encode_text_stringz(parent, key);
+
+    CborEncoder arrEnc;
+    cbor_encoder_create_array(parent, &arrEnc, len);
+    for (size_t i = 0; i < len; i++)
+    {
+        cbor_encode_int(&arrEnc, array[i]);
+    }
+    cbor_encoder_close_container(parent, &arrEnc);
+}
+/*------------------------------ Timer functions -----------------------------*/
 static void prvSensorReadTimerCallback(TimerHandle_t xTimer)
 {
     // Notify the timer task
@@ -116,7 +128,6 @@ static void prvSensorReadTimerCallback(TimerHandle_t xTimer)
 
 esp_err_t sensor_read_timer_init(void)
 {
-    //-------------Timer Init---------------//
     xSensorReadTimer = xTimerCreate("SensorReadTimer", SENSOR_READ_PERIOD, pdTRUE, 0, prvSensorReadTimerCallback);
     if (xSensorReadTimer == NULL)
     {
@@ -126,6 +137,7 @@ esp_err_t sensor_read_timer_init(void)
     return ESP_OK;
 }
 
+/* -------------------- Led functions ----------------------------*/
 static void prvLedBlinkTimerCallback(TimerHandle_t xTimer)
 {
     static bool led_state = false;
@@ -156,39 +168,93 @@ void led_init(void)
     }
 }
 
+/**
+ * @brief Updates the LED blink period based on the provided value.
+ *
+ * This function adjusts the LED blink behavior depending on the specified period:
+ * - If the period is 0, the LED is turned off.
+ * - If the period is `portMAX_DELAY`, the LED remains solid (always on).
+ * - Otherwise, the LED blinks with the specified period.
+ *
+ * @param period The desired blink period in milliseconds. Use 0 to turn off the LED,
+ *               or `portMAX_DELAY` to keep the LED solid.
+ */
 void update_led_blink_period(uint32_t period)
 {
     led_blink_period = period;
     if (xLedBlinkTimer != NULL)
     {
-        xTimerChangePeriod(xLedBlinkTimer, pdMS_TO_TICKS(led_blink_period), 0);
+        if (period == 0)
+        {
+            // Turn off the LED
+            gpio_set_level(LED_GPIO, 0);
+            xTimerStop(xLedBlinkTimer, 0);
+        }
+        else if (period == portMAX_DELAY)
+        {
+            // Make the LED solid (always on)
+            gpio_set_level(LED_GPIO, 1);
+            xTimerStop(xLedBlinkTimer, 0);
+        }
+        else
+        {
+            // Update the blink period
+            xTimerChangePeriod(xLedBlinkTimer, pdMS_TO_TICKS(led_blink_period), 0);
+            xTimerStart(xLedBlinkTimer, 0);
+        }
     }
+}
+
+/* -------------------- Heap statistics ----------------------------*/
+void check_heap_status()
+{
+    size_t free_heap = esp_get_free_heap_size();
+    size_t min_free_heap = esp_get_minimum_free_heap_size();
+    multi_heap_info_t heap_info;
+    heap_caps_get_info(&heap_info, MALLOC_CAP_DEFAULT);
+
+    printf("🔍 Heap Status:\n");
+    printf("  🧠 Current Free Heap:        %d bytes\n", free_heap);
+    printf("  📉 Minimum Ever Free Heap:   %d bytes\n", min_free_heap);
+    printf("  🔎 Largest Free Block:       %d bytes\n", heap_info.largest_free_block);
+    printf("  🧩 Total Free Blocks:        %d\n", heap_info.free_blocks);
+    printf("  ⚠️  Free Blocks < 32 Bytes:   %d\n", heap_info.total_blocks < 32);
 }
 
 /**************************************************************************************************
  *                                     MQTT Callback functions
  **************************************************************************************************/
-/* MQTT Event Handler */
 void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
     esp_mqtt_event_handle_t event = event_data;
     esp_mqtt_client_handle_t client = event->client;
-    int msg_id;
     switch ((esp_mqtt_event_id_t)event_id)
     {
     case MQTT_EVENT_CONNECTED:
         ESP_LOGI(TAG, "Connected to HiveMQ broker!");
-        mqtt_publish_startUpMsg();                                      // Publish startup message
-        esp_mqtt_client_subscribe(client, MQTT_TOPIC("commands/#"), 1); // Subscribe to the command topic
+        const esp_app_desc_t *app_desc = esp_app_get_description();
+
+        esp_mqtt_client_publish(client, "device", DEVICE_ID, 0, 1, 1);
+        esp_mqtt_client_publish(client, MQTT_TOPIC("attributes/firmware_version"), app_desc->version, 0, 1, 1);
+
+        char sampling_rate_str[10];
+        sprintf(sampling_rate_str, "%d", SAMPLE_FREQUENCY); // Convert SAMPLE_FREQUENCY to string
+        esp_mqtt_client_publish(client, MQTT_TOPIC("attributes/sampling_rate"), sampling_rate_str, 0, 1, 1);
+
+        char sample_batch[10];
+        sprintf(sample_batch, "%d", SAMPLE_BATCH); // Convert SAMPLE_FREQUENCY to string
+        esp_mqtt_client_publish(client, MQTT_TOPIC("attributes/sample_batch"), sample_batch, 0, 1, 1);
+
+        ESP_LOGI(TAG, "Device name: %s", DEVICE_ID);
+        esp_mqtt_client_publish(client, MQTT_TOPIC("status_online"), "true", 0, 1, 1); // Publish startup message
+        esp_mqtt_client_subscribe(client, MQTT_TOPIC("commands/#"), 1);                // Subscribe to the command topic
         ESP_LOGI(TAG, "Subscribed to topic: %s", MQTT_TOPIC("commands/#"));
-        xTimerStop(xLedBlinkTimer, 0); // Stop LED blinking
-        gpio_set_level(LED_GPIO, 1);   // Turn on LED when connected
+        update_led_blink_period(portMAX_DELAY); // Turn on the LED
         break;
 
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGW(TAG, "Disconnected from MQTT broker");
         update_led_blink_period(LED_BLINK_PERIOD_DISCONNECTED);
-        xTimerStart(xLedBlinkTimer, 0); // Start LED blinking
         break;
 
     case MQTT_EVENT_DATA:
@@ -252,7 +318,6 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
 
 void timer_read_sensor_task(void *arg)
 {
-
     while (1)
     {
         // Wait for the timer to notify
@@ -275,7 +340,6 @@ void timer_read_sensor_task(void *arg)
             //-------------Read PPG Values---------------//
             ESP_ERROR_CHECK(adpd144_readIRValue(&ir_array[sample_count], 1));
             ESP_ERROR_CHECK(adpd144_readRedValue(&red_array[sample_count], 1));
-
             ecg_array[sample_count] = ecg.voltage_value;
             gsr_array[sample_count] = gsr.voltage_value;
 
@@ -293,10 +357,10 @@ void timer_read_sensor_task(void *arg)
         }
     }
 }
+
 void mqtt_publish_task(void *arg)
 {
-
-    char *message = NULL;
+    CborEncoder encoder, mapEncoder;
 
     while (1)
     {
@@ -307,79 +371,36 @@ void mqtt_publish_task(void *arg)
         check_heap_status();
 #endif
 
-        // Create root JSON object and arrays
-        cJSON *json = cJSON_CreateObject();
-        cJSON *time_arr = cJSON_CreateArray();
-        cJSON *gsr_arr = cJSON_CreateArray();
-        cJSON *ecg_arr = cJSON_CreateArray();
-        cJSON *ir_arr = cJSON_CreateArray();
-        cJSON *red_arr = cJSON_CreateArray();
-
-        // Add arrays to root JSON object
-        if (!cJSON_AddItemToObject(json, "time", time_arr) ||
-            !cJSON_AddItemToObject(json, "gsr", gsr_arr) ||
-            !cJSON_AddItemToObject(json, "ecg", ecg_arr) ||
-            !cJSON_AddItemToObject(json, "ir", ir_arr) ||
-            !cJSON_AddItemToObject(json, "red", red_arr)) {
-            printf("❌ Failed to add arrays to root object\n");
-            goto cleanup;
-        }
+        // Initialize CBOR encoder
+        cbor_encoder_init(&encoder, buffer, sizeof(buffer), 0);
+        cbor_encoder_create_map(&encoder, &mapEncoder, 5);
 
         if (xSemaphoreTake(xArrayMutex, portMAX_DELAY) == pdTRUE)
         {
-            // Fill arrays
-            for (int i = 0; i < SAMPLE_BATCH; i++)
-            {
-                ADD_NUM_ARRAY_ITEM(time_arr, time_array[i]);
-                ADD_NUM_ARRAY_ITEM(gsr_arr, gsr_array[i]);
-                ADD_NUM_ARRAY_ITEM(ecg_arr, ecg_array[i]);
-                ADD_NUM_ARRAY_ITEM(ir_arr, ir_array[i]);
-                ADD_NUM_ARRAY_ITEM(red_arr, red_array[i]);
-            }
+            // Encode arrays into the map
+            encode_int_array(&mapEncoder, "time", time_array, SAMPLE_BATCH);
+            encode_int_array(&mapEncoder, "gsr", gsr_array, SAMPLE_BATCH);
+            encode_int_array(&mapEncoder, "ecg", ecg_array, SAMPLE_BATCH);
+            encode_int_array(&mapEncoder, "ir", ir_array, SAMPLE_BATCH);
+            encode_int_array(&mapEncoder, "red", red_array, SAMPLE_BATCH);
 
-            // Release the mutex
             xSemaphoreGive(xArrayMutex);
         }
 
-        else
-        {
-            printf("❌ Failed to take xArrayMutex\n");
-            goto cleanup;
-        }
+        // Close the CBOR map
+        cbor_encoder_close_container(&encoder, &mapEncoder);
 
-        // Print JSON to buffer
-        message = cJSON_PrintUnformatted(json); // 0 = unformatted
-        if (!message)
-        {
-            printf("❌ Failed to print JSON\n");
-            esp_restart(); // Restart the ESP32
-            goto cleanup;
-        }
+        // Publish the encoded data to MQTT
+        size_t encoded_len = cbor_encoder_get_buffer_size(&encoder, buffer);
+        int msg_id = esp_mqtt_client_publish(client, MQTT_TOPIC("data"), (const char *)buffer, encoded_len, 1, 0);
 
-        // Publish and verify MQTT result
-        int msg_id = esp_mqtt_client_publish(client, MQTT_TOPIC("data"), message, 0, 1, 0);
         if (msg_id < 0)
         {
-            printf("❌ MQTT publish failed\n");
+            ESP_LOGE(TAG, "Failed to publish MQTT message");
         }
         else
         {
-            // printf("✅ Published: %s\n", message);
-        }
-
-     cleanup:
-        if (message)
-        {
-            // printf("🗑️  Freeing message\n");
-            free(message);
-            message = NULL;
-        }
-
-        if (json)
-        {
-            // printf("🗑️  Freeing JSON\n");
-            cJSON_Delete(json); // Frees all children arrays too
-            json = NULL;
+            // ESP_LOGI(TAG, "Published CBOR data to MQTT (msg_id: %d, size: %zu bytes)", msg_id, encoded_len);
         }
 
 #ifdef HEAP_MONITOR_ENABLE
@@ -406,18 +427,8 @@ void app_main(void)
     ESP_ERROR_CHECK(adpd144_init());
 
     led_init();
-    xTimerStart(xLedBlinkTimer, 0); // Start LED blinking
 
-    // // Initialize service_name
-    // get_device_service_name(service_name, sizeof(service_name));
-
-#ifdef CONFIG_EXAMPLE_WIFI_PROV_MODE
     wifi_provisioning();
-#endif
-
-#ifdef CONFIG_EXAMPLE_WIFI_STAT_MODE
-    wifi_init_sta();
-#endif
 
     check_time();
 
