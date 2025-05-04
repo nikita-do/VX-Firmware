@@ -40,12 +40,11 @@
 /**************************************************************************************************
  *                                      Macro Definition
  **************************************************************************************************/
-#define SAMPLE_PERIOD (1000 / SAMPLE_FREQUENCY) // ms
-#define SENSOR_READ_PERIOD pdMS_TO_TICKS(SAMPLE_PERIOD)
-
 #define LED_GPIO GPIO_NUM_2 // GPIO2 for LED
 
 // #define HEAP_MONITOR_ENABLE  // Uncomment to enable heap monitoring
+
+#define TIMER_PERIOD_TICKS (configTICK_RATE_HZ / SAMPLE_FREQUENCY_HZ) // Calculate ticks for 512 Hz
 
 /**************************************************************************************************
  *                                     Global declaration
@@ -125,7 +124,8 @@ static void prvSensorReadTimerCallback(TimerHandle_t xTimer)
 
 esp_err_t sensor_read_timer_init(void)
 {
-    xSensorReadTimer = xTimerCreate("SensorReadTimer", SENSOR_READ_PERIOD, pdTRUE, 0, prvSensorReadTimerCallback);
+    // Create the timer with the calculated period
+    xSensorReadTimer = xTimerCreate("SensorReadTimer", TIMER_PERIOD_TICKS, pdTRUE, 0, prvSensorReadTimerCallback);
     if (xSensorReadTimer == NULL)
     {
         ESP_LOGE(TAG, "Timer Create Failed");
@@ -235,11 +235,11 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
         esp_mqtt_client_publish(client, MQTT_TOPIC("attributes/firmware_version"), app_desc->version, 0, 1, 1);
 
         char sampling_rate_str[10];
-        sprintf(sampling_rate_str, "%d", SAMPLE_FREQUENCY); // Convert SAMPLE_FREQUENCY to string
+        sprintf(sampling_rate_str, "%d", SAMPLE_FREQUENCY_HZ); // Convert SAMPLE_FREQUENCY_HZ to string
         esp_mqtt_client_publish(client, MQTT_TOPIC("attributes/sampling_rate"), sampling_rate_str, 0, 1, 1);
 
         char sample_batch[10];
-        sprintf(sample_batch, "%d", SAMPLE_BATCH); // Convert SAMPLE_FREQUENCY to string
+        sprintf(sample_batch, "%d", SAMPLE_BATCH); // Convert SAMPLE_FREQUENCY_HZ to string
         esp_mqtt_client_publish(client, MQTT_TOPIC("attributes/sample_batch"), sample_batch, 0, 1, 1);
 
         ESP_LOGI(TAG, "Device name: %s", DEVICE_ID);
@@ -287,6 +287,12 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
                 red_array[0] = 0;  // Reset the Red array
 
                 sample_count = 0; // Reset the sample count
+
+                buffer_init(&ecg_buffer);
+                buffer_init(&gsr_buffer);
+                buffer_init(&ir_buffer);
+                buffer_init(&red_buffer);
+                buffer_init(&time_buffer);
 
                 // Stop the timer task and PPG
                 esp_mqtt_client_publish(client, MQTT_TOPIC("responses/start"), "false", 0, 1, 1); // Publish response message
@@ -411,7 +417,7 @@ void mqtt_publish_task(void *arg)
             }
             else
             {
-                // ESP_LOGI(TAG, "Published CBOR data to MQTT (msg_id: %d, size: %zu bytes)", msg_id, encoded_len);
+                ESP_LOGI(TAG, "Published CBOR data to MQTT (msg_id: %d, size: %zu bytes)", msg_id, encoded_len);
             }
         }
 
@@ -430,7 +436,7 @@ void mqtt_publish_task(void *arg)
  *                                      Main application
  **************************************************************************************************/
 void app_main(void)
-{vc
+{
     ESP_LOGI(TAG, "[APP] Startup..");
     ESP_LOGI(TAG, "[APP] Free memory: %" PRIu32 " bytes", esp_get_free_heap_size());
     ESP_LOGI(TAG, "[APP] IDF version: %s", esp_get_idf_version());

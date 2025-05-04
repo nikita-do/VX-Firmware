@@ -14,8 +14,8 @@
 #define DEVICE_ID "VX_CEA362" // Device specific ID
 #define MQTT_TOPIC(subtopic) "device/" DEVICE_ID "/" subtopic
 
-#define SAMPLE_FREQUENCY 250                    // Hz
-#define SAMPLE_BATCH 250 // Number of samples to be sent in one batch
+#define SAMPLE_FREQUENCY_HZ 512                    
+#define SAMPLE_BATCH 512 // Number of samples to be sent in one batch
 
 #define LED_BLINK_PERIOD_DISCONNECTED 200 // ms
 #define LED_BLINK_PERIOD_PROVISIONING 500 // ms
@@ -73,8 +73,7 @@ void wifi_provisioning(void);
 void update_led_blink_period(uint32_t period);
 
 // circular_buffer.c
-#define BUFFER_SIZE 512
-#define PROCESS_SIZE 250
+#define BUFFER_SIZE 1024
 
 #if (BUFFER_SIZE & (BUFFER_SIZE - 1)) != 0
 #error "BUFFER_SIZE must be a power of two."

@@ -15,7 +15,7 @@ const adpd144_register_t register_config[] = {
     {REG_SAMPLE_CLK, 0x0080},           // start the sample clock (32 kHz)
     {REG_INT_IO_CTL, 0x0005},           // enable interrupt drive
     {REG_SLOT_EN, 0x30A9},
-    {REG_F_SAMPLE, 0x0004},             // sampling rate = 250 Hz
+    {REG_F_SAMPLE, 0x0001},             // sampling rate = 1000 Hz
     {REG_PD_LED_SELECT, 0x0116},        // 
     {REG_NUM_AVG, 0x0330},              // Average sample = 8
     {REG_SLOTA_CH1_OFFSET, 0x3FFF},     // not used

@@ -55,34 +55,34 @@ bool buffer_put(CircularBuffer_t *cb, uint32_t data)
 bool buffer_get_chunk(CircularBuffer_t *cb, uint32_t *temp_buffer)
 {
     // Ensure PROCESS_SIZE is valid
-    if (PROCESS_SIZE > BUFFER_SIZE)
+    if (SAMPLE_BATCH > BUFFER_SIZE)
     {
         printf("⚠️ PROCESS_SIZE exceeds BUFFER_SIZE. Adjust the configuration.\n");
         return false;
     }
 
     size_t available = buffer_distance(cb->tail, cb->head);
-    if (!cb->full && available < PROCESS_SIZE)
+    if (!cb->full && available < SAMPLE_BATCH)
     {
         return false; // Not enough data yet
     }
 
-    if (cb->tail + PROCESS_SIZE <= BUFFER_SIZE)
+    if (cb->tail + SAMPLE_BATCH <= BUFFER_SIZE)
     {
         // No wraparound
-        memcpy(temp_buffer, &cb->buffer[cb->tail], PROCESS_SIZE * sizeof(uint32_t));
+        memcpy(temp_buffer, &cb->buffer[cb->tail], SAMPLE_BATCH * sizeof(uint32_t));
     }
     else
     {
         // Partial-wrap: copy in two parts
         size_t first_part = BUFFER_SIZE - cb->tail;
-        size_t second_part = PROCESS_SIZE - first_part;
+        size_t second_part = SAMPLE_BATCH - first_part;
 
         memcpy(temp_buffer, &cb->buffer[cb->tail], first_part * sizeof(uint32_t));
         memcpy(temp_buffer + first_part, &cb->buffer[0], second_part * sizeof(uint32_t));
     }
 
-    cb->tail = (cb->tail + PROCESS_SIZE) & (BUFFER_SIZE - 1); // Use bitwise AND for modulus
+    cb->tail = (cb->tail + SAMPLE_BATCH) & (BUFFER_SIZE - 1); // Use bitwise AND for modulus
     cb->full = false;                                                           // Data has been processed
     return true;
 }
