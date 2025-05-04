@@ -14,7 +14,9 @@
 #define DEVICE_ID "VX_CEA362" // Device specific ID
 #define MQTT_TOPIC(subtopic) "device/" DEVICE_ID "/" subtopic
 
-#define LED_BLINK_PERIOD_CONNECTED 1000 // ms (TODO: not blink, but constantly on)
+#define SAMPLE_FREQUENCY 250                    // Hz
+#define SAMPLE_BATCH 250 // Number of samples to be sent in one batch
+
 #define LED_BLINK_PERIOD_DISCONNECTED 200 // ms
 #define LED_BLINK_PERIOD_PROVISIONING 500 // ms
 
@@ -43,6 +45,7 @@
 
 // #include "driver/gpio.h"
 
+// app_adc.c
 typedef struct
 {
     adc_unit_t adc_unit;                   // ADC unit
@@ -53,10 +56,6 @@ typedef struct
     int voltage_value;                     // Converted voltage value
 } AdcConfig_t;
 
-/*---------------------------------------------------
-                Function Prototypes
------------------------------------------------------*/
-// app_adc.c
 esp_err_t adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_cali_handle_t *out_handle);
 void adc_calibration_deinit(adc_cali_handle_t handle);
 esp_err_t adc_oneshot_init(adc_unit_t unit, adc_channel_t channel, adc_oneshot_unit_handle_t *out_adc_handle, adc_cali_handle_t *out_cali_handle);
@@ -72,5 +71,31 @@ const char *get_timestamp();
 // wifi_prov.c and wifi_stat.c
 void wifi_provisioning(void);
 void update_led_blink_period(uint32_t period);
+
+// circular_buffer.c
+#define BUFFER_SIZE 512
+#define PROCESS_SIZE 250
+
+#if (BUFFER_SIZE & (BUFFER_SIZE - 1)) != 0
+#error "BUFFER_SIZE must be a power of two."
+#endif
+
+typedef struct {
+    uint32_t buffer[BUFFER_SIZE];
+    size_t head;
+    size_t tail;
+    size_t process_index;
+    bool full;
+} CircularBuffer_t;
+
+void buffer_init(CircularBuffer_t *cb);
+bool buffer_is_empty(CircularBuffer_t *cb);
+bool buffer_is_full(CircularBuffer_t *cb);
+size_t buffer_data_count(CircularBuffer_t *cb);
+size_t buffer_distance(size_t from, size_t to);
+bool buffer_put(CircularBuffer_t *cb, uint32_t data);
+bool buffer_get_chunk(CircularBuffer_t *cb, uint32_t *temp_buffer);
+void buffer_print(CircularBuffer_t *cb);
+
         
 #endif // APP_MAIN_H

@@ -40,10 +40,8 @@
 /**************************************************************************************************
  *                                      Macro Definition
  **************************************************************************************************/
-#define SAMPLE_FREQUENCY 250                    // Hz
 #define SAMPLE_PERIOD (1000 / SAMPLE_FREQUENCY) // ms
 #define SENSOR_READ_PERIOD pdMS_TO_TICKS(SAMPLE_PERIOD)
-#define SAMPLE_BATCH 250 // Number of samples to be sent in one batch = 1 seconds of data
 
 #define LED_GPIO GPIO_NUM_2 // GPIO2 for LED
 
@@ -57,9 +55,6 @@ static const char *TAG = "app_main";
 static TaskHandle_t xTimerTask = NULL;
 static TaskHandle_t xMqttTask = NULL;
 
-// Mutex for protecting shared arrays
-static SemaphoreHandle_t xArrayMutex = NULL;
-
 void timer_read_sensor_task(void *arg);
 void mqtt_publish_task(void *arg);
 
@@ -72,7 +67,9 @@ static uint32_t ir_array[SAMPLE_BATCH] = {0};
 static uint32_t red_array[SAMPLE_BATCH] = {0};
 static uint32_t time_array[SAMPLE_BATCH] = {0};
 
-uint8_t buffer[10000] = {0}; // Buffer for CBOR encoding
+static CircularBuffer_t ecg_buffer, gsr_buffer, ir_buffer, red_buffer, time_buffer;
+
+uint8_t cbor_buffer[10000] = {0}; // Buffer for CBOR encoding
 
 AdcConfig_t gsr = {
     .adc_unit = ADC_UNIT_1,
@@ -97,7 +94,7 @@ static TimerHandle_t xSensorReadTimer = NULL;
 static uint32_t led_blink_period = LED_BLINK_PERIOD_DISCONNECTED;
 
 static int64_t read_start_time = 0; // Start time for reading sensors
-static int64_t elapsed_time_ms = 0;
+static int64_t elapsed_time_us = 0;
 static uint16_t sample_count = 0;
 
 /**************************************************************************************************
@@ -137,7 +134,7 @@ esp_err_t sensor_read_timer_init(void)
     return ESP_OK;
 }
 
-/* -------------------- Led functions ----------------------------*/
+/* -------------------- LED functions ----------------------------*/
 static void prvLedBlinkTimerCallback(TimerHandle_t xTimer)
 {
     static bool led_state = false;
@@ -318,42 +315,47 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
 
 void timer_read_sensor_task(void *arg)
 {
+    // Initialize the circular buffers
+    buffer_init(&ecg_buffer);
+    buffer_init(&gsr_buffer);
+    buffer_init(&ir_buffer);
+    buffer_init(&red_buffer);
+    buffer_init(&time_buffer);
+
+    uint32_t ir_value = 0;
+    uint32_t red_value = 0;
+
     while (1)
     {
         // Wait for the timer to notify
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
         // Calculate elapsed time
-        elapsed_time_ms = (esp_timer_get_time() - read_start_time) / 1000; // Convert microseconds to milliseconds
+        elapsed_time_us = (esp_timer_get_time() - read_start_time); // in microseconds
+        //-------------ADC1 Oneshot Read---------------//
+        ESP_ERROR_CHECK(adc_oneshot_read(gsr.unit_handle, gsr.channel, &gsr.raw_value));
+        ESP_ERROR_CHECK(adc_cali_raw_to_voltage(gsr.cali_handle, gsr.raw_value, &gsr.voltage_value));
 
-        // Lock the mutex before accessing shared arrays
-        if (xSemaphoreTake(xArrayMutex, portMAX_DELAY) == pdTRUE)
+        //-------------ADC2 Oneshot Read---------------//
+        ESP_ERROR_CHECK(adc_oneshot_read(ecg.unit_handle, ecg.channel, &ecg.raw_value));
+        ESP_ERROR_CHECK(adc_cali_raw_to_voltage(ecg.cali_handle, ecg.raw_value, &ecg.voltage_value));
+
+        //-------------Read PPG Values---------------//
+        ESP_ERROR_CHECK(adpd144_readIRValue(&ir_value, 1));
+        ESP_ERROR_CHECK(adpd144_readRedValue(&red_value, 1));
+
+        buffer_put(&ecg_buffer, ecg.voltage_value);
+        buffer_put(&gsr_buffer, gsr.voltage_value);
+        buffer_put(&ir_buffer, ir_value);
+        buffer_put(&red_buffer, red_value);
+        buffer_put(&time_buffer, elapsed_time_us);
+
+        sample_count++; // Increment sample count
+        if (sample_count >= SAMPLE_BATCH)
         {
-            //-------------ADC1 Oneshot Read---------------//
-            ESP_ERROR_CHECK(adc_oneshot_read(gsr.unit_handle, gsr.channel, &gsr.raw_value));
-            ESP_ERROR_CHECK(adc_cali_raw_to_voltage(gsr.cali_handle, gsr.raw_value, &gsr.voltage_value));
-
-            //-------------ADC2 Oneshot Read---------------//
-            ESP_ERROR_CHECK(adc_oneshot_read(ecg.unit_handle, ecg.channel, &ecg.raw_value));
-            ESP_ERROR_CHECK(adc_cali_raw_to_voltage(ecg.cali_handle, ecg.raw_value, &ecg.voltage_value));
-
-            //-------------Read PPG Values---------------//
-            ESP_ERROR_CHECK(adpd144_readIRValue(&ir_array[sample_count], 1));
-            ESP_ERROR_CHECK(adpd144_readRedValue(&red_array[sample_count], 1));
-            ecg_array[sample_count] = ecg.voltage_value;
-            gsr_array[sample_count] = gsr.voltage_value;
-
-            time_array[sample_count] = elapsed_time_ms; // Store elapsed time in milliseconds
-            // Release the mutex
-            xSemaphoreGive(xArrayMutex);
-
-            sample_count++; // Increment sample count
-            if (sample_count == SAMPLE_BATCH)
-            {
-                sample_count = 0; // Reset sample count
-                // Notify the MQTT task to publish data
-                xTaskNotifyGive(xMqttTask);
-            }
+            sample_count = 0; // Reset sample count
+            // Notify the MQTT task to publish data
+            xTaskNotifyGive(xMqttTask);
         }
     }
 }
@@ -364,19 +366,31 @@ void mqtt_publish_task(void *arg)
 
     while (1)
     {
-        // Wait for the timer task to notify
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
+        // Print the number of used data in each buffer
+        ESP_LOGI(TAG, "Buffer usage:");
+        ESP_LOGI(TAG, "  ECG Buffer: %d/%d", buffer_data_count(&ecg_buffer), BUFFER_SIZE);
+        ESP_LOGI(TAG, "  GSR Buffer: %d/%d", buffer_data_count(&gsr_buffer), BUFFER_SIZE);
+        ESP_LOGI(TAG, "  IR Buffer: %d/%d", buffer_data_count(&ir_buffer), BUFFER_SIZE);
+        ESP_LOGI(TAG, "  Red Buffer: %d/%d", buffer_data_count(&red_buffer), BUFFER_SIZE);
+        ESP_LOGI(TAG, "  Time Buffer: %d/%d", buffer_data_count(&time_buffer), BUFFER_SIZE);
+
+        if (buffer_get_chunk(&ecg_buffer, ecg_array) &&
+            buffer_get_chunk(&gsr_buffer, gsr_array) &&
+            buffer_get_chunk(&ir_buffer, ir_array) &&
+            buffer_get_chunk(&red_buffer, red_array) &&
+            buffer_get_chunk(&time_buffer, time_array))
+        {
+
 #ifdef HEAP_MONITOR_ENABLE
-        check_heap_status();
+            check_heap_status();
 #endif
 
-        // Initialize CBOR encoder
-        cbor_encoder_init(&encoder, buffer, sizeof(buffer), 0);
-        cbor_encoder_create_map(&encoder, &mapEncoder, 5);
+            // Initialize CBOR encoder
+            cbor_encoder_init(&encoder, cbor_buffer, sizeof(cbor_buffer), 0);
+            cbor_encoder_create_map(&encoder, &mapEncoder, 5);
 
-        if (xSemaphoreTake(xArrayMutex, portMAX_DELAY) == pdTRUE)
-        {
             // Encode arrays into the map
             encode_int_array(&mapEncoder, "time", time_array, SAMPLE_BATCH);
             encode_int_array(&mapEncoder, "gsr", gsr_array, SAMPLE_BATCH);
@@ -384,23 +398,26 @@ void mqtt_publish_task(void *arg)
             encode_int_array(&mapEncoder, "ir", ir_array, SAMPLE_BATCH);
             encode_int_array(&mapEncoder, "red", red_array, SAMPLE_BATCH);
 
-            xSemaphoreGive(xArrayMutex);
+            // Close the CBOR map
+            cbor_encoder_close_container(&encoder, &mapEncoder);
+
+            // Publish the encoded data to MQTT
+            size_t encoded_len = cbor_encoder_get_buffer_size(&encoder, cbor_buffer);
+            int msg_id = esp_mqtt_client_publish(client, MQTT_TOPIC("data"), (const char *)cbor_buffer, encoded_len, 1, 0);
+
+            if (msg_id < 0)
+            {
+                ESP_LOGE(TAG, "Failed to publish MQTT message");
+            }
+            else
+            {
+                // ESP_LOGI(TAG, "Published CBOR data to MQTT (msg_id: %d, size: %zu bytes)", msg_id, encoded_len);
+            }
         }
 
-        // Close the CBOR map
-        cbor_encoder_close_container(&encoder, &mapEncoder);
-
-        // Publish the encoded data to MQTT
-        size_t encoded_len = cbor_encoder_get_buffer_size(&encoder, buffer);
-        int msg_id = esp_mqtt_client_publish(client, MQTT_TOPIC("data"), (const char *)buffer, encoded_len, 1, 0);
-
-        if (msg_id < 0)
-        {
-            ESP_LOGE(TAG, "Failed to publish MQTT message");
-        }
         else
         {
-            // ESP_LOGI(TAG, "Published CBOR data to MQTT (msg_id: %d, size: %zu bytes)", msg_id, encoded_len);
+            ESP_LOGW(TAG, "Buffer is empty or not enough data to publish");
         }
 
 #ifdef HEAP_MONITOR_ENABLE
@@ -413,7 +430,7 @@ void mqtt_publish_task(void *arg)
  *                                      Main application
  **************************************************************************************************/
 void app_main(void)
-{
+{vc
     ESP_LOGI(TAG, "[APP] Startup..");
     ESP_LOGI(TAG, "[APP] Free memory: %" PRIu32 " bytes", esp_get_free_heap_size());
     ESP_LOGI(TAG, "[APP] IDF version: %s", esp_get_idf_version());
@@ -434,16 +451,8 @@ void app_main(void)
 
     mqtt_app_start();
 
-    // Create the mutex
-    xArrayMutex = xSemaphoreCreateMutex();
-    if (xArrayMutex == NULL)
-    {
-        ESP_LOGE(TAG, "Failed to create mutex");
-        return;
-    }
-
     // Create the MQTT task
-    xTaskCreate(mqtt_publish_task, "MqttTask", 4096, NULL, 5, &xMqttTask);
+    xTaskCreate(mqtt_publish_task, "MqttTask", 4096, NULL, 4, &xMqttTask);
     if (xMqttTask == NULL)
     {
         ESP_LOGE(TAG, "Failed to create MQTT task");
