@@ -11,14 +11,13 @@
 #ifndef APP_MAIN_H
 #define APP_MAIN_H
 
-#define DEVICE_ID "VX_CEA362" // Device specific ID
-#define MQTT_TOPIC(subtopic) "device/" DEVICE_ID "/" subtopic
-
 #define SAMPLE_FREQUENCY_HZ 512                    
 #define SAMPLE_BATCH 512 // Number of samples to be sent in one batch
 
 #define LED_BLINK_PERIOD_DISCONNECTED 200 // ms
 #define LED_BLINK_PERIOD_PROVISIONING 500 // ms
+
+#define BUFFER_NAME_MAX_LEN 32
 
 /* C-Standard headers */
 #include <stdio.h>
@@ -39,6 +38,8 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_event.h"
+#include <nvs_flash.h>
+
 
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
@@ -68,9 +69,10 @@ void mqtt_app_start(void);
 void check_time(void);
 const char *get_timestamp();
 
-// wifi_prov.c and wifi_stat.c
+// wifi_prov.c
 void wifi_provisioning(void);
 void update_led_blink_period(uint32_t period);
+extern char service_name[12];
 
 // circular_buffer.c
 #define BUFFER_SIZE 1024
@@ -83,16 +85,16 @@ typedef struct {
     uint32_t buffer[BUFFER_SIZE];
     size_t head;
     size_t tail;
-    size_t process_index;
+    char name[BUFFER_NAME_MAX_LEN];
     bool full;
 } CircularBuffer_t;
 
-void buffer_init(CircularBuffer_t *cb);
+void buffer_init(CircularBuffer_t *cb, const char *name);
 bool buffer_is_empty(CircularBuffer_t *cb);
 bool buffer_is_full(CircularBuffer_t *cb);
 size_t buffer_data_count(CircularBuffer_t *cb);
 size_t buffer_distance(size_t from, size_t to);
-bool buffer_put(CircularBuffer_t *cb, uint32_t data);
+void buffer_put(CircularBuffer_t *cb, uint32_t data);
 bool buffer_get_chunk(CircularBuffer_t *cb, uint32_t *temp_buffer);
 void buffer_print(CircularBuffer_t *cb);
 

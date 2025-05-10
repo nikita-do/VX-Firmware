@@ -33,7 +33,7 @@
 #include "qrcode.h"
 
 static const char *TAG = "app_wifi_prov";
-static char service_name[12];
+char service_name[12];
 
 #if CONFIG_EXAMPLE_PROV_SECURITY_VERSION_2
 #if CONFIG_EXAMPLE_PROV_SEC2_DEV_MODE
@@ -171,7 +171,6 @@ static void event_handler(void* arg, esp_event_base_t event_base,
                 if (disconnected_time >= 5) {
                     ESP_LOGW(TAG, "Disconnected for too long. Restarting ESP...");
                     ESP_ERROR_CHECK(nvs_flash_erase());
-                    ESP_ERROR_CHECK(nvs_flash_init());
                     esp_restart();
                 }
                 else 

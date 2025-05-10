@@ -23,6 +23,12 @@
  *  - Added TinyCBOR component: Encoded data as CBOR before sending to MQTT broker.
  *  - ADPD144 component updated: Sampling rate = 250 Hz
  *  - Improved LED indicator
+ * v0.2.2 - 2025-05-04
+ *  - Added circular buffers to store sensor data
+ *  - Changed Freertos frequency to 512Hz
+ *  - Increased ADC and ADPD144 sampling rate to 512Hz, with 512 samples per batch
+ *  - Added command to clear NVS flash
+ *  - Assigned specific DEVICE_ID to different devices
  */
 #include "app_main.h"
 #include "driver/gpio.h"
@@ -50,6 +56,9 @@
  *                                     Global declaration
  **************************************************************************************************/
 static const char *TAG = "app_main";
+
+static portMUX_TYPE buffer_mux = portMUX_INITIALIZER_UNLOCKED;
+
 // Task handles
 static TaskHandle_t xTimerTask = NULL;
 static TaskHandle_t xMqttTask = NULL;
@@ -95,6 +104,17 @@ static uint32_t led_blink_period = LED_BLINK_PERIOD_DISCONNECTED;
 static int64_t read_start_time = 0; // Start time for reading sensors
 static int64_t elapsed_time_us = 0;
 static uint16_t sample_count = 0;
+
+static char mqtt_topics_firmware_version[64];
+static char mqtt_topics_sampling_rate[64];
+static char mqtt_topics_sample_batch[64];
+static char mqtt_topics_status_online[64];
+static char mqtt_topics_commands[64];
+static char mqtt_topics_commands_start[64];
+static char mqtt_topics_commands_reset[64];
+static char mqtt_topics_responses_start[64];
+static char mqtt_topics_responses_reset[64];
+static char mqtt_topics_data[64];
 
 /**************************************************************************************************
  *                                  Helper Functions
@@ -221,6 +241,20 @@ void check_heap_status()
 /**************************************************************************************************
  *                                     MQTT Callback functions
  **************************************************************************************************/
+void initialize_mqtt_topics(const char *service_name)
+{
+    snprintf(mqtt_topics_firmware_version, sizeof(mqtt_topics_firmware_version), "device/%s/attributes/firmware_version", service_name);
+    snprintf(mqtt_topics_sampling_rate, sizeof(mqtt_topics_sampling_rate), "device/%s/attributes/sampling_rate", service_name);
+    snprintf(mqtt_topics_sample_batch, sizeof(mqtt_topics_sample_batch), "device/%s/attributes/sample_batch", service_name);
+    snprintf(mqtt_topics_status_online, sizeof(mqtt_topics_status_online), "device/%s/status_online", service_name);
+    snprintf(mqtt_topics_commands, sizeof(mqtt_topics_commands), "device/%s/commands/#", service_name);
+    snprintf(mqtt_topics_commands_start, sizeof(mqtt_topics_commands_start), "device/%s/commands/start", service_name);
+    snprintf(mqtt_topics_commands_reset, sizeof(mqtt_topics_commands_reset), "device/%s/commands/reset", service_name);
+    snprintf(mqtt_topics_responses_start, sizeof(mqtt_topics_responses_start), "device/%s/responses/start", service_name);
+    snprintf(mqtt_topics_responses_reset, sizeof(mqtt_topics_responses_reset), "device/%s/responses/reset", service_name);
+    snprintf(mqtt_topics_data, sizeof(mqtt_topics_data), "device/%s/data", service_name);
+}
+
 void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
     esp_mqtt_event_handle_t event = event_data;
@@ -229,28 +263,38 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
     {
     case MQTT_EVENT_CONNECTED:
         ESP_LOGI(TAG, "Connected to HiveMQ broker!");
-        const esp_app_desc_t *app_desc = esp_app_get_description();
+        initialize_mqtt_topics(service_name);
 
-        esp_mqtt_client_publish(client, "device", DEVICE_ID, 0, 1, 1);
-        esp_mqtt_client_publish(client, MQTT_TOPIC("attributes/firmware_version"), app_desc->version, 0, 1, 1);
+        ESP_LOGI(TAG, "Device name: %s", service_name);
+        esp_mqtt_client_publish(client, mqtt_topics_status_online, "true", 0, 1, 1);
+
+        const esp_app_desc_t *app_desc = esp_app_get_description();
+        esp_mqtt_client_publish(client, mqtt_topics_firmware_version, app_desc->version, 0, 1, 1);
 
         char sampling_rate_str[10];
-        sprintf(sampling_rate_str, "%d", SAMPLE_FREQUENCY_HZ); // Convert SAMPLE_FREQUENCY_HZ to string
-        esp_mqtt_client_publish(client, MQTT_TOPIC("attributes/sampling_rate"), sampling_rate_str, 0, 1, 1);
+        sprintf(sampling_rate_str, "%d", SAMPLE_FREQUENCY_HZ);
+        esp_mqtt_client_publish(client, mqtt_topics_sampling_rate, sampling_rate_str, 0, 1, 1);
 
         char sample_batch[10];
-        sprintf(sample_batch, "%d", SAMPLE_BATCH); // Convert SAMPLE_FREQUENCY_HZ to string
-        esp_mqtt_client_publish(client, MQTT_TOPIC("attributes/sample_batch"), sample_batch, 0, 1, 1);
+        sprintf(sample_batch, "%d", SAMPLE_BATCH);
+        esp_mqtt_client_publish(client, mqtt_topics_sample_batch, sample_batch, 0, 1, 1);
 
-        ESP_LOGI(TAG, "Device name: %s", DEVICE_ID);
-        esp_mqtt_client_publish(client, MQTT_TOPIC("status_online"), "true", 0, 1, 1); // Publish startup message
-        esp_mqtt_client_subscribe(client, MQTT_TOPIC("commands/#"), 1);                // Subscribe to the command topic
-        ESP_LOGI(TAG, "Subscribed to topic: %s", MQTT_TOPIC("commands/#"));
-        update_led_blink_period(portMAX_DELAY); // Turn on the LED
+        esp_mqtt_client_subscribe(client, mqtt_topics_commands, 1);
+        ESP_LOGI(TAG, "Subscribed to topic: %s", mqtt_topics_commands);
+
+        update_led_blink_period(portMAX_DELAY);
         break;
 
     case MQTT_EVENT_DISCONNECTED:
+        static int disconnected_time = 0;
         ESP_LOGW(TAG, "Disconnected from MQTT broker");
+        disconnected_time++;
+        if (disconnected_time >= 3)
+        {
+            ESP_LOGW(TAG, "Disconnected for too long. Restarting ESP...");
+            ESP_ERROR_CHECK(nvs_flash_erase());
+            esp_restart();
+        }
         update_led_blink_period(LED_BLINK_PERIOD_DISCONNECTED);
         break;
 
@@ -259,43 +303,35 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
 
         vTaskDelay(1000 / portTICK_PERIOD_MS); // Delay to display the log
 
-        if (strncmp(event->topic, MQTT_TOPIC("commands/start"), event->topic_len) == 0)
+        if (strncmp(event->topic, mqtt_topics_commands_start, event->topic_len) == 0)
         {
-            // Check if the received cmd is start
             if (strncmp(event->data, "true", event->data_len) == 0)
             {
-                esp_mqtt_client_publish(client, MQTT_TOPIC("responses/start"), "true", 0, 1, 1); // Publish response message
+                esp_mqtt_client_publish(client, mqtt_topics_responses_start, "true", 0, 1, 1);
                 ESP_LOGI(TAG, "Received 'start' command, publishing data...");
-                /* Initiate PPG */
                 adpd144_start();
-                /* Start the timer task */
-                read_start_time = esp_timer_get_time(); // Get the start time for reading sensors
-                xTimerStart(xSensorReadTimer, 0);       // Start the timer
+                read_start_time = esp_timer_get_time();
+                xTimerStart(xSensorReadTimer, 0);
             }
-
-            // Check if the received cmd is stop
-            if (strncmp(event->data, "false", event->data_len) == 0)
+            else if (strncmp(event->data, "false", event->data_len) == 0)
             {
+                esp_mqtt_client_publish(client, mqtt_topics_responses_start, "false", 0, 1, 1);
                 ESP_LOGI(TAG, "Received 'stop' command, stopping data publishing...");
-                xTimerStop(xSensorReadTimer, 0); // Stop the timer
+                sample_count = 0;
+                xTimerStop(xSensorReadTimer, 0);
                 adpd144_stop();
+                time_array[0] = gsr_array[0] = ecg_array[0] = ir_array[0] = red_array[0] = 0;
+            }
+        }
 
-                time_array[0] = 0; // Reset the time array
-                gsr_array[0] = 0;  // Reset the GSR array
-                ecg_array[0] = 0;  // Reset the ECG array
-                ir_array[0] = 0;   // Reset the IR array
-                red_array[0] = 0;  // Reset the Red array
-
-                sample_count = 0; // Reset the sample count
-
-                buffer_init(&ecg_buffer);
-                buffer_init(&gsr_buffer);
-                buffer_init(&ir_buffer);
-                buffer_init(&red_buffer);
-                buffer_init(&time_buffer);
-
-                // Stop the timer task and PPG
-                esp_mqtt_client_publish(client, MQTT_TOPIC("responses/start"), "false", 0, 1, 1); // Publish response message
+        else if (strncmp(event->topic, mqtt_topics_commands_reset, event->topic_len) == 0)
+        {
+            if (strncmp(event->data, "true", event->data_len) == 0)
+            {
+                esp_mqtt_client_publish(client, mqtt_topics_responses_reset, "true", 0, 1, 1);
+                ESP_LOGW(TAG, "Restarting ESP...");
+                ESP_ERROR_CHECK(nvs_flash_erase());
+                esp_restart();
             }
         }
         break;
@@ -321,13 +357,6 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
 
 void timer_read_sensor_task(void *arg)
 {
-    // Initialize the circular buffers
-    buffer_init(&ecg_buffer);
-    buffer_init(&gsr_buffer);
-    buffer_init(&ir_buffer);
-    buffer_init(&red_buffer);
-    buffer_init(&time_buffer);
-
     uint32_t ir_value = 0;
     uint32_t red_value = 0;
 
@@ -357,6 +386,7 @@ void timer_read_sensor_task(void *arg)
         buffer_put(&time_buffer, elapsed_time_us);
 
         sample_count++; // Increment sample count
+
         if (sample_count >= SAMPLE_BATCH)
         {
             sample_count = 0; // Reset sample count
@@ -369,24 +399,36 @@ void timer_read_sensor_task(void *arg)
 void mqtt_publish_task(void *arg)
 {
     CborEncoder encoder, mapEncoder;
+    bool data_ready = false;
+    int msg_id = 0;
 
     while (1)
     {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
         // Print the number of used data in each buffer
-        ESP_LOGI(TAG, "Buffer usage:");
-        ESP_LOGI(TAG, "  ECG Buffer: %d/%d", buffer_data_count(&ecg_buffer), BUFFER_SIZE);
-        ESP_LOGI(TAG, "  GSR Buffer: %d/%d", buffer_data_count(&gsr_buffer), BUFFER_SIZE);
-        ESP_LOGI(TAG, "  IR Buffer: %d/%d", buffer_data_count(&ir_buffer), BUFFER_SIZE);
-        ESP_LOGI(TAG, "  Red Buffer: %d/%d", buffer_data_count(&red_buffer), BUFFER_SIZE);
-        ESP_LOGI(TAG, "  Time Buffer: %d/%d", buffer_data_count(&time_buffer), BUFFER_SIZE);
+        // ESP_LOGI(TAG, "Buffer usage:");
+        // ESP_LOGI(TAG, "  ECG Buffer: %d/%d", buffer_data_count(&ecg_buffer), BUFFER_SIZE);
+        // ESP_LOGI(TAG, "  GSR Buffer: %d/%d", buffer_data_count(&gsr_buffer), BUFFER_SIZE);
+        // ESP_LOGI(TAG, "  IR Buffer: %d/%d", buffer_data_count(&ir_buffer), BUFFER_SIZE);
+        // ESP_LOGI(TAG, "  Red Buffer: %d/%d", buffer_data_count(&red_buffer), BUFFER_SIZE);
+        // ESP_LOGI(TAG, "  Time Buffer: %d/%d", buffer_data_count(&time_buffer), BUFFER_SIZE);
 
-        if (buffer_get_chunk(&ecg_buffer, ecg_array) &&
-            buffer_get_chunk(&gsr_buffer, gsr_array) &&
-            buffer_get_chunk(&ir_buffer, ir_array) &&
-            buffer_get_chunk(&red_buffer, red_array) &&
-            buffer_get_chunk(&time_buffer, time_array))
+        // Enter critical section to ensure thread safety
+        taskENTER_CRITICAL(&buffer_mux);
+
+        // Retrieve data from buffers
+        data_ready = buffer_get_chunk(&ecg_buffer, ecg_array) && buffer_get_chunk(&gsr_buffer, gsr_array) && buffer_get_chunk(&ir_buffer, ir_array) && buffer_get_chunk(&red_buffer, red_array) && buffer_get_chunk(&time_buffer, time_array);
+
+        // Exit critical section
+        taskEXIT_CRITICAL(&buffer_mux);
+
+        if (!data_ready)
+        {
+            ESP_LOGW(TAG, "Buffer is empty or not enough data to publish");
+            continue;
+        }
+        else
         {
 
 #ifdef HEAP_MONITOR_ENABLE
@@ -409,7 +451,8 @@ void mqtt_publish_task(void *arg)
 
             // Publish the encoded data to MQTT
             size_t encoded_len = cbor_encoder_get_buffer_size(&encoder, cbor_buffer);
-            int msg_id = esp_mqtt_client_publish(client, MQTT_TOPIC("data"), (const char *)cbor_buffer, encoded_len, 1, 0);
+
+            msg_id = esp_mqtt_client_publish(client, mqtt_topics_data, (const char *)cbor_buffer, encoded_len, 0, 0);
 
             if (msg_id < 0)
             {
@@ -419,11 +462,6 @@ void mqtt_publish_task(void *arg)
             {
                 ESP_LOGI(TAG, "Published CBOR data to MQTT (msg_id: %d, size: %zu bytes)", msg_id, encoded_len);
             }
-        }
-
-        else
-        {
-            ESP_LOGW(TAG, "Buffer is empty or not enough data to publish");
         }
 
 #ifdef HEAP_MONITOR_ENABLE
@@ -457,8 +495,15 @@ void app_main(void)
 
     mqtt_app_start();
 
+    // Initialize the circular buffers
+    buffer_init(&ecg_buffer, "ECG Buffer");
+    buffer_init(&gsr_buffer, "GSR Buffer");
+    buffer_init(&ir_buffer, "IR Buffer");
+    buffer_init(&red_buffer, "Red Buffer");
+    buffer_init(&time_buffer, "Time Buffer");
+
     // Create the MQTT task
-    xTaskCreate(mqtt_publish_task, "MqttTask", 4096, NULL, 4, &xMqttTask);
+    xTaskCreate(mqtt_publish_task, "MqttTask", 4096, NULL, 5, &xMqttTask);
     if (xMqttTask == NULL)
     {
         ESP_LOGE(TAG, "Failed to create MQTT task");

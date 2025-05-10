@@ -33,6 +33,9 @@ void log_error_if_nonzero(const char *message, int error_code)
 
 void mqtt_app_start(void)
 {
+    char mqtt_topics_status_online[64];
+    snprintf(mqtt_topics_status_online, sizeof(mqtt_topics_status_online), "device/%s/status_online", service_name);
+
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker = {
             .address.uri = CONFIG_BROKER_URL,
@@ -43,7 +46,7 @@ void mqtt_app_start(void)
             .authentication.password = CONFIG_BROKER_PASSWORD          
         },
         .session = {
-            .last_will.topic = MQTT_TOPIC("status_online"),
+            .last_will.topic = mqtt_topics_status_online,
             .last_will.msg = "false",
             .last_will.qos = 1,
             .last_will.retain = 1, // Ensure message is retained
