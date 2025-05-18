@@ -266,6 +266,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
         initialize_mqtt_topics(service_name);
 
         ESP_LOGI(TAG, "Device name: %s", service_name);
+        esp_mqtt_client_publish(client, "device", service_name, 0, 1, 1);
         esp_mqtt_client_publish(client, mqtt_topics_status_online, "true", 0, 1, 1);
 
         const esp_app_desc_t *app_desc = esp_app_get_description();
@@ -406,19 +407,13 @@ void mqtt_publish_task(void *arg)
     {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-        // Print the number of used data in each buffer
-        // ESP_LOGI(TAG, "Buffer usage:");
-        // ESP_LOGI(TAG, "  ECG Buffer: %d/%d", buffer_data_count(&ecg_buffer), BUFFER_SIZE);
-        // ESP_LOGI(TAG, "  GSR Buffer: %d/%d", buffer_data_count(&gsr_buffer), BUFFER_SIZE);
-        // ESP_LOGI(TAG, "  IR Buffer: %d/%d", buffer_data_count(&ir_buffer), BUFFER_SIZE);
-        // ESP_LOGI(TAG, "  Red Buffer: %d/%d", buffer_data_count(&red_buffer), BUFFER_SIZE);
-        // ESP_LOGI(TAG, "  Time Buffer: %d/%d", buffer_data_count(&time_buffer), BUFFER_SIZE);
-
         // Enter critical section to ensure thread safety
         taskENTER_CRITICAL(&buffer_mux);
 
         // Retrieve data from buffers
-        data_ready = buffer_get_chunk(&ecg_buffer, ecg_array) && buffer_get_chunk(&gsr_buffer, gsr_array) && buffer_get_chunk(&ir_buffer, ir_array) && buffer_get_chunk(&red_buffer, red_array) && buffer_get_chunk(&time_buffer, time_array);
+        data_ready = buffer_get_chunk(&ecg_buffer, ecg_array) && buffer_get_chunk(&gsr_buffer, gsr_array) &&
+                     buffer_get_chunk(&ir_buffer, ir_array) && buffer_get_chunk(&red_buffer, red_array) &&
+                     buffer_get_chunk(&time_buffer, time_array);
 
         // Exit critical section
         taskEXIT_CRITICAL(&buffer_mux);
@@ -428,40 +423,37 @@ void mqtt_publish_task(void *arg)
             ESP_LOGW(TAG, "Buffer is empty or not enough data to publish");
             continue;
         }
-        else
-        {
 
 #ifdef HEAP_MONITOR_ENABLE
-            check_heap_status();
+        check_heap_status();
 #endif
 
-            // Initialize CBOR encoder
-            cbor_encoder_init(&encoder, cbor_buffer, sizeof(cbor_buffer), 0);
-            cbor_encoder_create_map(&encoder, &mapEncoder, 5);
+        // Initialize CBOR encoder
+        cbor_encoder_init(&encoder, cbor_buffer, sizeof(cbor_buffer), 0);
+        cbor_encoder_create_map(&encoder, &mapEncoder, 5);
 
-            // Encode arrays into the map
-            encode_int_array(&mapEncoder, "time", time_array, SAMPLE_BATCH);
-            encode_int_array(&mapEncoder, "gsr", gsr_array, SAMPLE_BATCH);
-            encode_int_array(&mapEncoder, "ecg", ecg_array, SAMPLE_BATCH);
-            encode_int_array(&mapEncoder, "ir", ir_array, SAMPLE_BATCH);
-            encode_int_array(&mapEncoder, "red", red_array, SAMPLE_BATCH);
+        // Encode arrays into the map
+        encode_int_array(&mapEncoder, "time", time_array, SAMPLE_BATCH);
+        encode_int_array(&mapEncoder, "gsr", gsr_array, SAMPLE_BATCH);
+        encode_int_array(&mapEncoder, "ecg", ecg_array, SAMPLE_BATCH);
+        encode_int_array(&mapEncoder, "ir", ir_array, SAMPLE_BATCH);
+        encode_int_array(&mapEncoder, "red", red_array, SAMPLE_BATCH);
 
-            // Close the CBOR map
-            cbor_encoder_close_container(&encoder, &mapEncoder);
+        // Close the CBOR map
+        cbor_encoder_close_container(&encoder, &mapEncoder);
 
-            // Publish the encoded data to MQTT
-            size_t encoded_len = cbor_encoder_get_buffer_size(&encoder, cbor_buffer);
+        // Publish the encoded data to MQTT
+        size_t encoded_len = cbor_encoder_get_buffer_size(&encoder, cbor_buffer);
 
-            msg_id = esp_mqtt_client_publish(client, mqtt_topics_data, (const char *)cbor_buffer, encoded_len, 0, 0);
+        msg_id = esp_mqtt_client_publish(client, mqtt_topics_data, (const char *)cbor_buffer, encoded_len, 0, 0);
 
-            if (msg_id < 0)
-            {
-                ESP_LOGE(TAG, "Failed to publish MQTT message");
-            }
-            else
-            {
-                ESP_LOGI(TAG, "Published CBOR data to MQTT (msg_id: %d, size: %zu bytes)", msg_id, encoded_len);
-            }
+        if (msg_id < 0)
+        {
+            ESP_LOGE(TAG, "Failed to publish MQTT message");
+        }
+        else
+        {
+            ESP_LOGI(TAG, "Published CBOR data to MQTT (msg_id: %d, size: %zu bytes)", msg_id, encoded_len);
         }
 
 #ifdef HEAP_MONITOR_ENABLE
@@ -470,9 +462,6 @@ void mqtt_publish_task(void *arg)
     }
 }
 
-/**************************************************************************************************
- *                                      Main application
- **************************************************************************************************/
 void app_main(void)
 {
     ESP_LOGI(TAG, "[APP] Startup..");
