@@ -51,36 +51,8 @@ void mqtt_app_start(void)
             .last_will.qos = 1,
             .last_will.retain = 1, // Ensure message is retained
             .keepalive = 30, // After 0.5 minutes of inactivity, the broker will disconnect the client -> status = offline
-        },
-        // .outbox = {
-        //     .limit = 4096, // Set outbox size to 10 messages
-        // },
-    };
-
-#if CONFIG_BROKER_URL_FROM_STDIN
-    char line[128];
-
-    if (strcmp(mqtt_cfg.broker.address.uri, "FROM_STDIN") == 0) {
-        int count = 0;
-        printf("Please enter url of mqtt broker\n");
-        while (count < 128) {
-            int c = fgetc(stdin);
-            if (c == '\n') {
-                line[count] = '\0';
-                break;
-            } else if (c > 0 && c < 127) {
-                line[count] = c;
-                ++count;
-            }
-            vTaskDelay(10 / portTICK_PERIOD_MS);
         }
-        mqtt_cfg.broker.address.uri = line;
-        printf("Broker url: %s\n", line);
-    } else {
-        ESP_LOGE(TAG, "Configuration mismatch: wrong broker url");
-        abort();
-    }
-#endif /* CONFIG_BROKER_URL_FROM_STDIN */
+    };
 
     client = esp_mqtt_client_init(&mqtt_cfg);
 

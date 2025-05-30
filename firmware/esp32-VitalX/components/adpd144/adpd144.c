@@ -9,7 +9,7 @@ i2c_adpd144_t dev_handle;
 
 static const char LOG_TAG[] = "i2c-adpd";
 
-// Set all register's values in an array
+// ADPD144 default configuration. Register's values is set in an array
 const adpd144_register_t register_config[] = {
     {REG_MODE, 0x0001},                 // program mode
     {REG_SAMPLE_CLK, 0x0080},           // start the sample clock (32 kHz)
@@ -72,7 +72,11 @@ void adpd144_loadConfig(const adpd144_register_t *cfg)
     }
 }
 
-
+/**
+ * @brief    Read Infrared Red value from Slot A
+ * @param    data Pointer to store the read value
+ * @param    len Length of data to read (1 for 16-bit, 2 for 32-bit)
+ */
 esp_err_t adpd144_readIRValue(uint32_t *data, uint8_t len)
 {
     uint16_t anRxData[2] = {0};
@@ -115,7 +119,11 @@ esp_err_t adpd144_readIRValue(uint32_t *data, uint8_t len)
     return ESP_OK;
 }
 
-
+/**
+ * @brief    Read Red value from Slot B
+ * @param    data Pointer to store the read value
+ * @param    len Length of data to read (1 for 16-bit, 2 for 32-bit)
+ */
 esp_err_t adpd144_readRedValue(uint32_t *data, uint8_t len)
 {
     uint16_t anRxData[2] = {0};
@@ -158,6 +166,12 @@ esp_err_t adpd144_readRedValue(uint32_t *data, uint8_t len)
     return ESP_OK;
 }
 
+/**
+ * @brief    Initialize the ADPD144 device
+ * 
+ * This function configures the I2C bus and initializes the ADPD144 device.
+ * It reads the chip ID to verify communication.
+ */
 esp_err_t adpd144_init(void)
 {
     esp_err_t ret = ESP_OK;
@@ -194,11 +208,21 @@ cleanup:
     return ret;
 }
 
+/**
+ * @brief  Start the ADPD144 device
+ *
+ * This function initializes the ADPD144 device with a default configuration.
+ */
 void adpd144_start(void)
 {
     adpd144_loadConfig(register_config); // Load the default configuration
 }
 
+/**
+ * @brief  Stop the ADPD144 device
+ *
+ * This function puts the ADPD144 into standby mode.
+ */
 void adpd144_stop(void)
 {
     adpd144_writeReg(REG_MODE, 0);      // Standby mode
@@ -212,7 +236,6 @@ void adpd144_stop(void)
 void adpd144_readReg(uint8_t nAddr, uint16_t *pnData)
 {
     uint8_t anRxData[2];
-    // ESP_RETURN_ON_FALSE(dev_handle, ESP_ERR_INVALID_STATE, LOG_TAG, "i2c device not initialized");
 
     ESP_ERROR_CHECK(i2c_master_transmit_receive(dev_handle.i2c_dev_handle, &nAddr, REG_ADDR_NUM_BYTES, anRxData, REG_VALUE_NUM_BYTES, -1));
 
@@ -226,8 +249,6 @@ void adpd144_readReg(uint8_t nAddr, uint16_t *pnData)
  */
 void adpd144_writeReg(uint8_t nAddr, uint16_t nRegValue)
 {
-    // ESP_RETURN_ON_FALSE(dev_handle, ESP_ERR_INVALID_STATE, LOG_TAG, "i2c device not initialized");
-
     dev_handle.buffer[0] = nAddr;
     dev_handle.buffer[1] = (uint8_t)(nRegValue >> 8);
     dev_handle.buffer[2] = (uint8_t)(nRegValue);

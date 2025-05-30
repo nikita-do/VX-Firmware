@@ -1,16 +1,28 @@
 dependencies:
+  espressif/cbor:
+    component_hash: 742f5005032227c6edbaab15f3dd6d2010bf2f5997ea93bb313e4e629789b2e0
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.3'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 0.6.0~2
   espressif/qrcode:
+    component_hash: 3b493771bc5d6ad30cbf87c25bf784aada8a08c941504355b55d6b75518ed7bc
     dependencies: []
     source:
-      path: C:\Users\SE\Documents\GitHub\VitalX\firmware\esp32-VitalX\components\espressif__qrcode
-      type: local
+      registry_url: https://components.espressif.com/
+      type: service
     version: 0.1.0~2
   idf:
     source:
       type: idf
     version: 5.4.0
 direct_dependencies:
+- espressif/cbor
 - espressif/qrcode
-manifest_hash: 31e84f87b31b00f3cedf7d22d0b74bad6171c400ec9cf1c9f42a27e3206a3765
+manifest_hash: 341fb06ed7a0ff78bae29b6bec6d222dfc3869c5ec803cb7f84105e870d68b8b
 target: esp32s2
 version: 2.0.0
