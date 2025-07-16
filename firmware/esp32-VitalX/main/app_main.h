@@ -75,7 +75,7 @@ void mqtt_app_start(void);
 
 //app_time.c
 void check_time(void);
-const char *get_timestamp();
+uint64_t get_timestamp();
 
 // wifi_prov.c
 void wifi_provisioning(void);

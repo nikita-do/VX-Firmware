@@ -48,7 +48,7 @@
  *                                      Macro Definition
  **************************************************************************************************/
 #define TIMER_PERIOD_TICKS (configTICK_RATE_HZ / SAMPLING_RATE) // Calculate ticks for 512 Hz
-#define LED_GPIO GPIO_NUM_2 // GPIO2 for LED
+#define LED_GPIO GPIO_NUM_1                                     // GPIO1 for LED
 
 #define CBOR_BUFFER_SIZE (20000) // Size of the CBOR buffer
 
@@ -59,10 +59,11 @@
  **************************************************************************************************/
 static const char *TAG = "app_main";
 static uint32_t led_blink_period = LED_BLINK_PERIOD_DISCONNECTED; // initial LED status: disconnected
-static uint64_t batchStartTime_ms = 0; // Start time for reading sensors
+static uint64_t batchStartTime_ms = 0;                            // Start time for reading sensors
 static uint16_t sampleCount = 0;
 static CircularBuffer_t gsrBuffer, ecgBuffer, irBuffer, redBuffer;
 static uint8_t cborBuffer[CBOR_BUFFER_SIZE];
+static uint32_t packet_id = 0; // Packet ID for CBOR messages
 
 // Task handles
 static TaskHandle_t xTimerTask = NULL;
@@ -79,8 +80,7 @@ AdcConfig_t gsr = {
     .unit_handle = NULL,
     .cali_handle = NULL,
     .raw_value = 0,
-    .voltage_value = 0
-};
+    .voltage_value = 0};
 
 AdcConfig_t ecg = {
     .adc_unit = ADC_UNIT_2,
@@ -88,8 +88,7 @@ AdcConfig_t ecg = {
     .unit_handle = NULL,
     .cali_handle = NULL,
     .raw_value = 0,
-    .voltage_value = 0
-};
+    .voltage_value = 0};
 
 // MQTT topics
 char mqtt_topics_firmware_version[64];
@@ -135,7 +134,7 @@ void encode_cb_array(const char *key, CircularBuffer_t *cb, CborEncoder *map_enc
     cb->read = (cb->read + N_SAMPLE) & (BUFFER_SIZE - 1);
 }
 
-// Encode the entire message as a CBOR map with a timestamp and 4 sensor data arrays.
+// Encode the entire message as a CBOR map with a timestamp, packet_id, and 4 sensor data arrays.
 esp_err_t encode_cbor_message(uint8_t *buffer, uint64_t timestamp, size_t buffer_size, size_t *encoded_length)
 {
     CborEncoder encoder;
@@ -143,8 +142,12 @@ esp_err_t encode_cbor_message(uint8_t *buffer, uint64_t timestamp, size_t buffer
 
     cbor_encoder_init(&encoder, buffer, buffer_size, 0);
 
-    // Start CBOR map with 5 key-value pairs
-    cbor_encoder_create_map(&encoder, &map_encoder, 5);
+    // Start CBOR map with 6 key-value pairs (added packet_id)
+    cbor_encoder_create_map(&encoder, &map_encoder, 6);
+
+    // "id": packet_id
+    cbor_encode_text_stringz(&map_encoder, "id");
+    cbor_encode_uint(&map_encoder, packet_id);
 
     // "t": timestamp
     cbor_encode_text_stringz(&map_encoder, "t");
@@ -282,8 +285,8 @@ void update_led_blink_period(uint32_t period)
         else if (period == portMAX_DELAY)
         {
             // Make the LED solid (always on)
-            gpio_set_level(LED_GPIO, 1);
             xTimerStop(xLedBlinkTimer, 0);
+            gpio_set_level(LED_GPIO, 1);
         }
         else
         {
@@ -376,6 +379,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
         ESP_LOGI(TAG, "Subscribed to topic: %s", mqtt_topics_commands);
 
         update_led_blink_period(portMAX_DELAY);
+
         break;
 
     case MQTT_EVENT_DISCONNECTED:
@@ -403,7 +407,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
                 esp_mqtt_client_publish(client, mqtt_topics_responses_start, "true", 0, 1, 1);
                 ESP_LOGI(TAG, "Received 'start' command, publishing data...");
                 adpd144_start();
-                batchStartTime_ms = esp_timer_get_time() / 1000;
+                batchStartTime_ms = get_timestamp(); // Get the current timestamp
                 xTimerStart(xSensorReadTimer, 0);
             }
             else if (strncmp(event->data, "false", event->data_len) == 0)
@@ -413,6 +417,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
                 xTimerStop(xSensorReadTimer, 0);
                 sampleCount = 0;
                 adpd144_stop();
+                packet_id = 0; // Reset packet_id on stop command
             }
         }
 
@@ -450,7 +455,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
  *	                                    Task functions
  **************************************************************************************************/
 
-/** 
+/**
  * @brief Task to read sensor data at regular intervals using a FreeRTOS timer.
  *
  * This task waits for the timer to notify it, reads the GSR and ECG values in voltage using ADC,
@@ -497,7 +502,7 @@ void timer_read_sensor_task(void *arg)
             // Notify the MQTT task to publish data
             xTaskNotifyGive(xMqttTask);
 
-            sampleCount = 0;                                               // Reset sample count
+            sampleCount = 0;                                        // Reset sample count
             batchStartTime_ms += (N_SAMPLE / SAMPLING_RATE) * 1000; // Update start time for the next batch
         }
     }
@@ -529,6 +534,7 @@ void mqtt_publish_task(void *arg)
         {
             ESP_LOGI(TAG, "Data published successfully, Encoded size: %zu bytes", encoded_size);
         }
+        packet_id++; // Increment packet_id
 
 #ifdef HEAP_MONITOR_ENABLE
         check_heap_status();
@@ -557,7 +563,7 @@ void app_main(void)
 
     wifi_provisioning();
 
-    // check_time();
+    check_time();
 
     mqtt_app_start();
 

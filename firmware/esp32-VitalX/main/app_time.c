@@ -22,20 +22,12 @@ static struct timeval tv;
 /*--------------------------------------------------------
         Get current time in microseconds
 ------------------------------------------------------*/
-const char* get_timestamp() {
-    static char buffer[84];  // Static buffer to store the formatted time
-    struct tm timeinfo;
-
-    // Get current time
+uint64_t get_timestamp()
+{
+    struct timeval tv;
     gettimeofday(&tv, NULL);
-    localtime_r(&tv.tv_sec, &timeinfo);
-
-    // Format: YYYY-MM-DD HH:MM:SS.microseconds
-    snprintf(buffer, sizeof(buffer), "%04d-%02d-%02d %02d:%02d:%02d.%06ld",
-             timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
-             timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec, tv.tv_usec);
-
-    return buffer;  // Return static buffer
+    uint64_t epoch_ms = (uint64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
+    return epoch_ms;
 }
 
 static void obtain_time(void)
@@ -53,7 +45,8 @@ static void obtain_time(void)
     // wait for time to be set
     int retry = 0;
     const int retry_count = 15;
-    while (esp_netif_sntp_sync_wait(2000 / portTICK_PERIOD_MS) == ESP_ERR_TIMEOUT && ++retry < retry_count) {
+    while (esp_netif_sntp_sync_wait(2000 / portTICK_PERIOD_MS) == ESP_ERR_TIMEOUT && ++retry < retry_count)
+    {
         ESP_LOGI(TAG, "Waiting for system time to be set... (%d/%d)", retry, retry_count);
     }
 
@@ -66,7 +59,8 @@ void check_time(void)
     struct tm timeinfo;
     localtime_r(&tv.tv_sec, &timeinfo);
     // Is time set? If not, tm_year will be (1970 - 1900).
-    if (timeinfo.tm_year < (2016 - 1900)) {
+    if (timeinfo.tm_year < (2016 - 1900))
+    {
         ESP_LOGI(TAG, "Time is not set yet. Connecting to WiFi and getting time over NTP.");
         obtain_time();
         // update 'now' variable with current time
