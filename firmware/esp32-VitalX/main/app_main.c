@@ -361,7 +361,7 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
         initialize_mqtt_topics(service_name);
 
         ESP_LOGI(TAG, "Device name: %s", service_name);
-        esp_mqtt_client_publish(client, "device", service_name, 0, 1, 1);
+        esp_mqtt_client_publish(client, "device/", service_name, 0, 1, 1);
         esp_mqtt_client_publish(client, mqtt_topics_status_online, "true", 0, 1, 1);
 
         const esp_app_desc_t *app_desc = esp_app_get_description();
