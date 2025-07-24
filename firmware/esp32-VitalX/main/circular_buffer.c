@@ -34,38 +34,38 @@ void buffer_put(CircularBuffer_t *cb, uint16_t data)
 }
 
 // Returns true and fills temp_buffer with PROCESS_SIZE samples if a full chunk is ready
-bool buffer_get_chunk(CircularBuffer_t *cb, uint16_t *temp_buffer)
+bool buffer_get_chunk(CircularBuffer_t *cb, uint16_t *temp_buffer, size_t sample_size)
 {
-    // Ensure N_SAMPLE is valid
-    if (N_SAMPLE > BUFFER_SIZE)
+    // Ensure sample_size is valid
+    if (sample_size > BUFFER_SIZE)
     {
         printf("⚠️ PROCESS_SIZE exceeds buffer size. Adjust the configuration.\n");
         return false;
     }
 
     size_t available = buffer_data_count(cb);
-    if (available < N_SAMPLE)
+    if (available < sample_size)
     {
-        printf("⚠️ Not enough data in buffer '%s' to get a chunk. Available: %zu, Required: %d\n", cb->name, available, N_SAMPLE);
+        printf("⚠️ Not enough data in buffer '%s' to get a chunk. Available: %zu, Required: %d\n", cb->name, available, sample_size);
         return false; // Not enough data yet
     }
 
-    if (cb->read + N_SAMPLE <= BUFFER_SIZE)
+    if (cb->read + sample_size <= BUFFER_SIZE)
     {
         // No wraparound
-        memcpy(temp_buffer, &cb->buffer[cb->read], N_SAMPLE * sizeof(uint16_t));
+        memcpy(temp_buffer, &cb->buffer[cb->read], sample_size * sizeof(uint16_t));
     }
     else
     {
         // Partial-wrap: copy in two parts
         size_t first_part = BUFFER_SIZE - cb->read;
-        size_t second_part = N_SAMPLE - first_part;
+        size_t second_part = sample_size - first_part;
 
         memcpy(temp_buffer, &cb->buffer[cb->read], first_part * sizeof(uint16_t));
         memcpy(temp_buffer + first_part, &cb->buffer[0], second_part * sizeof(uint16_t));
     }
 
-    cb->read = (cb->read + N_SAMPLE) & (BUFFER_SIZE - 1); // Use modulus for wraparound
+    cb->read = (cb->read + sample_size) & (BUFFER_SIZE - 1); // Use modulus for wraparound
     return true;
 }
 

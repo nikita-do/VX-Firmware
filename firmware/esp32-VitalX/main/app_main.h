@@ -12,7 +12,7 @@
 #define APP_MAIN_H
 
 #define SAMPLING_RATE 512  // Hz                
-#define N_SAMPLE 1536 // Number of samples to be sent in one batch
+#define N_SAMPLE 512 // Number of samples to be sent in one batch
 
 #define LED_BLINK_PERIOD_DISCONNECTED 200 // ms
 #define LED_BLINK_PERIOD_PROVISIONING 500 // ms
@@ -103,7 +103,7 @@ bool buffer_is_full(CircularBuffer_t *cb);
 size_t buffer_data_count(CircularBuffer_t *cb);
 size_t buffer_distance(size_t from, size_t to);
 void buffer_put(CircularBuffer_t *cb, uint16_t data);
-bool buffer_get_chunk(CircularBuffer_t *cb, uint16_t *temp_buffer);
+bool buffer_get_chunk(CircularBuffer_t *cb, uint16_t *temp_buffer, size_t sample_size);
 void buffer_print(CircularBuffer_t *cb);
 
         

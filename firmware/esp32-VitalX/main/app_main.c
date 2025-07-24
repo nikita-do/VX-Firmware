@@ -44,13 +44,15 @@
 #include "mqtt_client.h"
 #include "esp_timer.h"
 
+#include "esp_wifi.h"
+
 /**************************************************************************************************
  *                                      Macro Definition
  **************************************************************************************************/
 #define TIMER_PERIOD_TICKS (configTICK_RATE_HZ / SAMPLING_RATE) // Calculate ticks for 512 Hz
 #define LED_GPIO GPIO_NUM_1                                     // GPIO1 for LED
 
-#define CBOR_BUFFER_SIZE (20000) // Size of the CBOR buffer
+#define CBOR_BUFFER_SIZE (10000) // Size of the CBOR buffer
 
 // #define HEAP_MONITOR_ENABLE // Uncomment to enable heap monitoring
 
@@ -62,6 +64,10 @@ static uint32_t led_blink_period = LED_BLINK_PERIOD_DISCONNECTED; // initial LED
 static uint64_t batchStartTime_ms = 0;                            // Start time for reading sensors
 static uint16_t sampleCount = 0;
 static CircularBuffer_t gsrBuffer, ecgBuffer, irBuffer, redBuffer;
+static uint16_t gsrTempBuffer[N_SAMPLE];
+static uint16_t ecgTempBuffer[N_SAMPLE];
+static uint16_t irTempBuffer[N_SAMPLE];
+static uint16_t redTempBuffer[N_SAMPLE];
 static uint8_t cborBuffer[CBOR_BUFFER_SIZE];
 static uint32_t packet_id = 0; // Packet ID for CBOR messages
 
@@ -101,6 +107,7 @@ char mqtt_topics_commands_reset[64];
 char mqtt_topics_responses_start[64];
 char mqtt_topics_responses_reset[64];
 char mqtt_topics_data[64];
+char mqtt_topics_rssi[64];
 
 // Extern varialbes
 extern esp_mqtt_client_handle_t client;
@@ -108,31 +115,6 @@ extern esp_mqtt_client_handle_t client;
 /**************************************************************************************************
  *                                  Helper Functions
  **************************************************************************************************/
-/*------------------------------- CBOR function ----------------------------*/
-// Encode a CBOR map item, where each key is the data name and the value is an array of samples stored in the circular buffer.
-void encode_cb_array(const char *key, CircularBuffer_t *cb, CborEncoder *map_encoder)
-{
-    CborEncoder array_encoder;
-
-    // Encode the key
-    cbor_encode_text_stringz(map_encoder, key);
-
-    // Start the array container
-    cbor_encoder_create_array(map_encoder, &array_encoder, N_SAMPLE);
-
-    // Encode each element from the circular buffer
-    for (size_t i = 0; i < N_SAMPLE; ++i)
-    {
-        size_t index = (cb->read + i) & (BUFFER_SIZE - 1);
-        cbor_encode_uint(&array_encoder, cb->buffer[index]);
-    }
-
-    // Close the array
-    cbor_encoder_close_container(map_encoder, &array_encoder);
-
-    // Update the read pointer
-    cb->read = (cb->read + N_SAMPLE) & (BUFFER_SIZE - 1);
-}
 
 // Encode the entire message as a CBOR map with a timestamp, packet_id, and 4 sensor data arrays.
 esp_err_t encode_cbor_message(uint8_t *buffer, uint64_t timestamp, size_t buffer_size, size_t *encoded_length)
@@ -153,10 +135,42 @@ esp_err_t encode_cbor_message(uint8_t *buffer, uint64_t timestamp, size_t buffer
     cbor_encode_text_stringz(&map_encoder, "t");
     cbor_encode_uint(&map_encoder, timestamp);
 
-    encode_cb_array("ecg", &ecgBuffer, &map_encoder);
-    encode_cb_array("gsr", &gsrBuffer, &map_encoder);
-    encode_cb_array("ir", &irBuffer, &map_encoder);
-    encode_cb_array("red", &redBuffer, &map_encoder);
+    // Encode temp buffers instead of circular buffers
+    cbor_encode_text_stringz(&map_encoder, "ecg");
+    CborEncoder ecg_array_encoder;
+    cbor_encoder_create_array(&map_encoder, &ecg_array_encoder, N_SAMPLE);
+    for (size_t i = 0; i < N_SAMPLE; ++i)
+    {
+        cbor_encode_uint(&ecg_array_encoder, ecgTempBuffer[i]);
+    }
+    cbor_encoder_close_container(&map_encoder, &ecg_array_encoder);
+
+    cbor_encode_text_stringz(&map_encoder, "gsr");
+    CborEncoder gsr_array_encoder;
+    cbor_encoder_create_array(&map_encoder, &gsr_array_encoder, N_SAMPLE);
+    for (size_t i = 0; i < N_SAMPLE; ++i)
+    {
+        cbor_encode_uint(&gsr_array_encoder, gsrTempBuffer[i]);
+    }
+    cbor_encoder_close_container(&map_encoder, &gsr_array_encoder);
+
+    cbor_encode_text_stringz(&map_encoder, "ir");
+    CborEncoder ir_array_encoder;
+    cbor_encoder_create_array(&map_encoder, &ir_array_encoder, N_SAMPLE);
+    for (size_t i = 0; i < N_SAMPLE; ++i)
+    {
+        cbor_encode_uint(&ir_array_encoder, irTempBuffer[i]);
+    }
+    cbor_encoder_close_container(&map_encoder, &ir_array_encoder);
+
+    cbor_encode_text_stringz(&map_encoder, "red");
+    CborEncoder red_array_encoder;
+    cbor_encoder_create_array(&map_encoder, &red_array_encoder, N_SAMPLE);
+    for (size_t i = 0; i < N_SAMPLE; ++i)
+    {
+        cbor_encode_uint(&red_array_encoder, redTempBuffer[i]);
+    }
+    cbor_encoder_close_container(&map_encoder, &red_array_encoder);
 
     cbor_encoder_close_container(&encoder, &map_encoder);
 
@@ -340,6 +354,7 @@ void initialize_mqtt_topics(const char *service_name)
     snprintf(mqtt_topics_responses_start, sizeof(mqtt_topics_responses_start), "device/%s/responses/start", service_name);
     snprintf(mqtt_topics_responses_reset, sizeof(mqtt_topics_responses_reset), "device/%s/responses/reset", service_name);
     snprintf(mqtt_topics_data, sizeof(mqtt_topics_data), "device/%s/data", service_name);
+    snprintf(mqtt_topics_rssi, sizeof(mqtt_topics_rssi), "device/%s/rssi", service_name);
 }
 
 /**
@@ -454,7 +469,29 @@ void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event
 /**************************************************************************************************
  *	                                    Task functions
  **************************************************************************************************/
+void rssi_publish_task(void *pvParameters)
+{
+    wifi_ap_record_t ap_info;
 
+    while (1)
+    {
+        esp_err_t ret = esp_wifi_sta_get_ap_info(&ap_info);
+
+        if (ret == ESP_OK)
+        {
+            char msg[64];
+            snprintf(msg, sizeof(msg), "{ \"ssid\": \"%s\", \"rssi\": %d }", ap_info.ssid, ap_info.rssi);
+            esp_mqtt_client_publish(client, mqtt_topics_rssi, msg, 0, 1, 0);
+            ESP_LOGI(TAG, "Published RSSI to MQTT: %s", msg);
+        }
+        else
+        {
+            ESP_LOGE(TAG, "Failed to get AP info: %s", esp_err_to_name(ret));
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(60 * 1000));
+    }
+}
 /**
  * @brief Task to read sensor data at regular intervals using a FreeRTOS timer.
  *
@@ -501,9 +538,7 @@ void timer_read_sensor_task(void *arg)
         {
             // Notify the MQTT task to publish data
             xTaskNotifyGive(xMqttTask);
-
-            sampleCount = 0;                                        // Reset sample count
-            batchStartTime_ms += (N_SAMPLE / SAMPLING_RATE) * 1000; // Update start time for the next batch
+            sampleCount = 0; // Reset sample count
         }
     }
 }
@@ -522,6 +557,11 @@ void mqtt_publish_task(void *arg)
 #endif
 
         size_t encoded_size = 0;
+        batchStartTime_ms += (N_SAMPLE / SAMPLING_RATE) * 1000; // Update start time for the next batch
+        buffer_get_chunk(&gsrBuffer, gsrTempBuffer, N_SAMPLE);
+        buffer_get_chunk(&ecgBuffer, ecgTempBuffer, N_SAMPLE);
+        buffer_get_chunk(&irBuffer, irTempBuffer, N_SAMPLE);
+        buffer_get_chunk(&redBuffer, redTempBuffer, N_SAMPLE);
         encode_cbor_message(cborBuffer, batchStartTime_ms, CBOR_BUFFER_SIZE, &encoded_size);
 
         // Publish the data to MQTT broker
@@ -582,4 +622,6 @@ void app_main(void)
         ESP_LOGE(TAG, "Failed to create timer task");
         return;
     }
+
+    xTaskCreate(&rssi_publish_task, "rssi_publish_task", 4096, NULL, 5, NULL);
 }
