@@ -140,12 +140,14 @@ idf.py flash monitor
 
 The project includes a custom firmware version definition in the CMake configuration and config entries for the MQTT broker URL, credentials, and Wi-Fi provisioning configuration.
 
-## Learning references
+## References
 
 - ESP-IDF: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/index.html
-- FreeRTOS: https://www.freertos.org/
-- CBOR Encoding: https://github.com/intel/tinycbor
-- MQTT over TLS with HiveMQ: https://www.hivemq.com/blog/mqtt-essentials-part-1-introducing-mqtt/
+- ESP SoftAP Provisioning:
+https://play.google.com/store/apps/details?id=com.espressif.provsoftap&pcampaignid=web_s
+hare
+- FreeRTOS: https://www.freertos.org/media/2018/FreeRTOS_Reference_Manual_V10.0.0.pdf
+- CBOR Encoding: https://cborbook.com/part_1/practical_introduction_to_cbor.html
 
 ---
 
