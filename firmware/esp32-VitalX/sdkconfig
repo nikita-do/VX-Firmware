@@ -474,9 +474,11 @@ CONFIG_PARTITION_TABLE_MD5=y
 #
 # MQTT Configuration
 #
-CONFIG_BROKER_URL="mqtts://700be638167b43289186dff783367cc3.s1.eu.hivemq.cloud:8883"
-CONFIG_BROKER_USERNAME="ngocdo"
-CONFIG_BROKER_PASSWORD="Ng19102002"
+# Secrets are intentionally left unset in this repository.
+# Configure these values locally or through a secure deployment mechanism.
+CONFIG_BROKER_URL=""
+CONFIG_BROKER_USERNAME=""
+CONFIG_BROKER_PASSWORD=""
 CONFIG_BROKER_CERTIFICATE_OVERRIDE=""
 # end of MQTT Configuration
 
