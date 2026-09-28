@@ -93,3 +93,4 @@ software/data/screenshot.png
 .vscode-ctags/
 .vscode-ctags
 .vscode/
+.devcontainer/
