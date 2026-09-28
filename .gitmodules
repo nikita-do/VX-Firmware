@@ -1,3 +1,0 @@
-[submodule "hardware/customLib/ESP32-S2"]
-	path = hardware/customLib/ESP32-S2
-	url = https://github.com/haluu86/ESP32-S2

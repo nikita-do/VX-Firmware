@@ -1,7 +1,0 @@
-(sym_lib_table
-  (version 7)
-  (lib (name "AD8232ACPZ")(type "KiCad")(uri "${KIPRJMOD}/../customLib/AD8232ACPZ-R7/AD8232ACPZ.kicad_sym")(options "")(descr ""))
-  (lib (name "ADP160AUJZ-1-8-R7")(type "KiCad")(uri "${KIPRJMOD}/../customLib/ADP160AUJZ-1-8-R7/ADP160AUJZ-1-8-R7.kicad_sym")(options "")(descr ""))
-  (lib (name "ADPD144RI")(type "KiCad")(uri "${KIPRJMOD}/../customLib/ADPD144RI/2024-07-30_15-34-50.kicad_sym")(options "")(descr ""))
-  (lib (name "ESP32-S2-WROOM")(type "KiCad")(uri "${KIPRJMOD}/../customLib/ESP32-S2/ESP32-S2-WROOM/LIBS/esp32-s2.kicad_sym")(options "")(descr ""))
-)

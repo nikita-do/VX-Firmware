@@ -90,3 +90,6 @@ fp-info-cache
 *cache*/
 /firmware/esp32-VitalX/.vscode
 software/data/screenshot.png
+.vscode-ctags/
+.vscode-ctags
+.vscode/
